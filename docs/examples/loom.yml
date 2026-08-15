@@ -1,0 +1,89 @@
+# loom.yml — example configuration (PROVISIONAL schema; illustrative, subject to change)
+version: 1
+
+# --- Providers: how to invoke each provider's own CLI (installed separately by the operator) ---
+providers:
+  claude:   { cmd: claude }        # Anthropic
+  gemini:   { cmd: gemini }        # Google
+  codex:    { cmd: codex }         # OpenAI
+  # A provider with no first-class adapter can be wired via the generic `exec` contract:
+  # myllm:  { adapter: exec, cmd: "myllm --headless", stdin: prompt, stdout: result }
+
+# --- Executors: the workspace + isolation a run happens in ---
+executors:
+  local:
+    type: worktree                 # fast; NOT a security boundary — trusted local use only
+  sandbox:
+    type: docker                   # portable "real isolation"
+    image: ghcr.io/you/loom-runtime:latest
+    user: nonroot
+    read_only_rootfs: true
+    resources: { cpus: 2, memory: 4g, pids: 512 }
+    timeout: 30m
+    egress_allowlist:              # the fix for supply-chain / exfiltration surface
+      - registry.npmjs.org
+      - github.com
+      - api.anthropic.com
+      - generativelanguage.googleapis.com
+  ubuntu:
+    type: workshop                 # Canonical Workshop (Ubuntu/LXD) — best-in-class Linux sandbox
+    env_file: .loom/workshop.yml   # Workshop env spec (SDKs, interfaces/permissions)
+    # access controls expressed via Workshop's snapd-style interface system (non-privileged defaults)
+
+# --- Sources: where tasks come from (trigger is configurable) ---
+sources:
+  gh:
+    type: github
+    repo: striving-technologies/strive-ui.io
+    trigger: { label: agent-ready }
+    auth: ${GITHUB_APP_TOKEN}      # repo-scoped, short-lived (App installation token)
+  backlog:
+    type: file
+    path: .loom/backlog.yml        # a plain task list — no forge required
+
+# --- Sinks: where results go (independent of the source) ---
+sinks:
+  gh:
+    type: github-pr
+    base: main
+    reviewer: pedoch
+    label: agent-pr
+  out:
+    type: file
+    path: out/
+
+# --- Lifecycles: named pipelines of steps. Software engineering is just one preset. ---
+lifecycles:
+
+  # The SDLC flow, generalized — and demonstrating PROVIDER-PER-STEP.
+  sdlc:
+    executor: sandbox
+    source: gh
+    sink: gh
+    max_open_outputs: 5            # backpressure (the "max 5 open PRs" cap, generalized)
+    steps:
+      - name: plan
+        provider: gemini           # plan with Gemini …
+        role: prompts/planner.md
+        readonly: true
+      - name: engineer
+        provider: claude           # … build with Claude …
+        role: prompts/engineer.md
+        loop_with: qa              # engineer <-> qa loop
+        max_iter: 5
+      - name: qa
+        provider: codex            # … review/verify with GPT
+        role: prompts/qa.md
+        gate:                      # step passes only if all gate commands succeed
+          - yarn test
+          - yarn lint-ts
+
+  # A non-engineering lifecycle over a non-forge source — proving generality.
+  research:
+    executor: local
+    source: backlog
+    sink: out
+    steps:
+      - { name: gather, provider: gemini, role: prompts/researcher.md }
+      - { name: verify, provider: claude, role: prompts/factcheck.md }
+      - { name: write,  provider: claude, role: prompts/writer.md }

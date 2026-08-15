@@ -1,0 +1,24 @@
+# Build output
+/dist/
+/bin/
+*.exe
+
+# Go
+/vendor/
+*.test
+*.out
+
+# loom runtime state / local config
+/.loom/
+*.log
+
+# Secrets — never commit tokens/keys
+*.env
+.env
+*token*
+!*.example
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
