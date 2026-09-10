@@ -16,7 +16,7 @@
 
 - [ ] Every commit is a Conventional Commit with a header of 72 characters or fewer.
 - [ ] Every commit is signed off by its author (`git commit -s`), and a human has signed off every commit.
-- [ ] Every commit is signed with the author's GPG or SSH key.
+- [ ] Every commit is signed locally with the author's GPG or SSH key.
 - [ ] No `Co-authored-by` trailers, agent session trailers or links, or agent footers in commits or this description.
 
 ### Change

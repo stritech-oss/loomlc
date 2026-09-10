@@ -57,7 +57,7 @@ alone. The list is `bot_ident_re` in `scripts/commit-policy.sh`.
 
 ### Signing
 
-Sign every commit with a GPG or SSH key that's registered to your GitHub account and matches the
+Sign your commits with a GPG or SSH key that's registered to your GitHub account and matches the
 commit author's email:
 
 ```bash
@@ -66,6 +66,11 @@ git config commit.gpgsign true
 ```
 
 Check a commit with `git log --show-signature -1`. Don't use `--no-gpg-sign`.
+
+Signatures don't survive merging. Pull requests land through GitHub's rebase merge, which rewrites
+each commit without a signature, so commits on `main` are unsigned. That's accepted: the sign-off is
+the rule that records responsibility, it's kept through the merge, and CI enforces it. Branch
+protection doesn't require signed commits, because that would block rebase merges.
 
 ### No agent attribution
 
