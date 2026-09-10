@@ -18,6 +18,10 @@
 *token*
 !*.example
 
+# Personal agent config — never shared
+CLAUDE.local.md
+.claude/settings.local.json
+
 # OS / editor
 .DS_Store
 .idea/
