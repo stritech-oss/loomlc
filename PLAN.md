@@ -1,6 +1,6 @@
-# loom — Plan
+# loomlc — Plan
 
-> Status: **design / planning**. Working name **loom** is provisional. This document is meant to be
+> Status: **design / planning**. Name: **loomlc** (*loom lifecycle*). This document is meant to be
 > picked up and iterated on later.
 
 ## 1. Context & motivation
@@ -16,7 +16,7 @@ But it is welded to three things it shouldn't be:
 2. **One task source / forge** (GitHub issues → GitHub PRs).
 3. **One lifecycle** (software engineering: plan/build/QA).
 
-**loom** removes all three couplings. It keeps the good ideas (disposable per-task workspaces,
+**loomlc** removes all three couplings. It keeps the good ideas (disposable per-task workspaces,
 backpressure/caps, an engineer↔verifier loop, a feedback loop, resume, scoped tokens, container
 isolation) and turns them into a small, composable engine.
 
@@ -35,7 +35,7 @@ isolation) and turns them into a small, composable engine.
 
 ## 2. Principles
 
-- **Orchestrator, not harness.** loom never calls a model API. It resolves a step to a provider CLI
+- **Orchestrator, not harness.** loomlc never calls a model API. It resolves a step to a provider CLI
   invocation, runs it in a workspace, and reads the result. Providers own the agent loop, tools, and
   model calls.
 - **Everything is an adapter.** Providers, sources, sinks, and executors are all plugins behind small
@@ -43,7 +43,7 @@ isolation) and turns them into a small, composable engine.
 - **Config over code.** A repo/operator describes lifecycles, provider bindings, source, sink, and
   executor in YAML. The portable engine + prompts are shared; only the config is per-repo.
 - **Deny by default.** Isolation and scoped credentials are the default posture, not an add-on.
-- **Human at the gate.** loom proposes (PRs/MRs/drafts); a human reviews and merges. No auto-merge.
+- **Human at the gate.** loomlc proposes (PRs/MRs/drafts); a human reviews and merges. No auto-merge.
 
 ## 3. Core concepts (glossary)
 
@@ -63,7 +63,7 @@ isolation) and turns them into a small, composable engine.
 
 ```
                          ┌──────────────────────────────────────────────┐
-   task sources          │                 loom engine                  │        sinks / forges
+   task sources          │                loomlc engine                 │        sinks / forges
  ┌───────────────┐       │  ┌────────────┐   ┌───────────────────────┐  │      ┌───────────────┐
  │ GitHub issues │──┐    │  │  scheduler │   │  lifecycle runner     │  │   ┌──▶│ GitHub PR     │
  │ GitLab / Jira │  ├───▶│  │ pickup+cap │──▶│  step → step → …       │  │───┤   │ GitLab MR     │
@@ -155,16 +155,16 @@ Why it earns a place here:
 - **It is fewer moving parts, not more.** For a multi-vendor setup it replaces three CLI installs and
   three auth conventions with one install and one credential-resolution order.
 - **It does not violate §2's "orchestrator, not harness".** Pi owns the agent loop and the model
-  calls; loom still resolves a step to a subprocess and reads the result.
+  calls; loomlc still resolves a step to a subprocess and reads the result.
 
 What it does **not** replace:
 - The **`claude` adapter**. A Claude-Max-only team already has `claude` installed and authenticated;
   pi asks them to install a second tool, re-auth, and accept a generic agent loop in place of the
   subagents and slash-commands Phase 0 is built on.
-- **loom.** Pi has no task sources, scheduler, backpressure, cross-run resume, or sinks. Zero overlap
+- **loomlc.** Pi has no task sources, scheduler, backpressure, cross-run resume, or sinks. Zero overlap
   with the engine.
 - **The language choice (§7).** Pi is TypeScript/npm. Drive it as a subprocess like any other CLI; do
-  **not** embed its SDK, or Node lands inside loom's single-binary distribution story.
+  **not** embed its SDK, or Node lands inside loomlc's single-binary distribution story.
 
 Auth and credentials (feeds §4.4): OAuth `/login` for Claude Pro/Max, ChatGPT Plus/Pro, GitHub
 Copilot and xAI, otherwise API keys. Resolution order is `--api-key` flag → `~/.pi/agent/auth.json`
@@ -207,14 +207,14 @@ Cross-cutting for the isolated executors:
 - **Egress allowlist** is the mitigation for the `yarn add`-style supply-chain surface: an agent can
   install deps from the registry but can't reach arbitrary hosts.
 - **Defense in depth:** where a provider CLI supports its own permission model (e.g. Claude's
-  allow/deny), loom passes a scoped policy through — but the sandbox is the real boundary.
+  allow/deny), loomlc passes a scoped policy through — but the sandbox is the real boundary.
 - **Adapters with no permission model must be sandboxed.** `pi` (and most aggregators) ship no
   permission layer at all — they inherit the launching process's access. For those adapters the
-  sandbox is the *only* boundary, so loom **refuses to run them under the `worktree` executor** and
+  sandbox is the *only* boundary, so loomlc **refuses to run them under the `worktree` executor** and
   requires `docker`/`workshop`. This is an enforced rule, not a recommendation.
 - **Per-run credential isolation for file-based auth stores.** `pi` resolves `~/.pi/agent/auth.json`
   **ahead of** environment variables. A stale auth file in the sandbox — or a mounted host `~/.pi` —
-  would silently override loom's injected per-run scoped credential and leak the operator's personal
+  would silently override loomlc's injected per-run scoped credential and leak the operator's personal
   subscription into the run, contradicting the rule above. Mitigation: set a per-run `HOME` and pass
   credentials explicitly (`--api-key`); never rely on env alone for `pi` steps, and never mount host
   dotfile directories.
@@ -225,21 +225,21 @@ Cross-cutting for the isolated executors:
 (released 2026-05-27, v0.9.x, open source) launches **sandboxed development environments from a single
 YAML file**, built on **unprivileged LXD system containers**, and is *explicitly positioned for
 agentic AI* — "code-executing agents operating alongside human developers with tighter access
-controls." That is almost exactly loom's isolated-executor requirement, so it's a strong candidate for
+controls." That is almost exactly loomlc's isolated-executor requirement, so it's a strong candidate for
 the `workshop` executor on Ubuntu/Linux.
 
 Why it fits:
 - **snapd-style interface system** for access control — granular, per-resource grants for network
   services, mounts, devices, SSH-agent, display — with **non-privileged defaults**. This maps cleanly
-  onto loom's "scoped permissions + egress allowlist" model, at the OS layer rather than hand-rolled.
-- **YAML-defined, versionable, reproducible** environments compose naturally with loom's config; a
-  loom `workshop` executor can generate/point at a Workshop env spec.
+  onto loomlc's "scoped permissions + egress allowlist" model, at the OS layer rather than hand-rolled.
+- **YAML-defined, versionable, reproducible** environments compose naturally with loomlc's config; a
+  loomlc `workshop` executor can generate/point at a Workshop env spec.
 - **SDKs** (Go, Ollama, OpenCode, CUDA, ROCm, custom, via a versioned SDK Store) make it easy to
   provision the toolchain a repo's gates need.
 
 Caveats to validate before committing (from the docs at
 `documentation.ubuntu.com/canonical-workshop/stable/`):
-- **Non-interactive `exec`**: loom needs to run a command *inside* the env non-interactively and
+- **Non-interactive `exec`**: loomlc needs to run a command *inside* the env non-interactively and
   capture output. The launch announcement doesn't confirm an `exec`-style subcommand — **verify**.
 - **Programmatic network egress control** granularity (allow specific hosts) via the interface system.
 - **Platform:** Ubuntu + LXD 6.8+ only (`sudo snap install --classic workshop`). So **`docker` stays
@@ -250,8 +250,8 @@ Decision: ship `docker` first (portable), add `workshop` as a Linux-optimized ex
 
 ### 4.6 Configuration
 
-A single `loom.yml` (global and/or per-repo) declares providers, executors, sources, sinks, and
-lifecycles. See [`docs/examples/loom.yml`](./docs/examples/loom.yml). Highlights:
+A single `loomlc.yml` (global and/or per-repo) declares providers, executors, sources, sinks, and
+lifecycles. See [`docs/examples/loomlc.yml`](./docs/examples/loomlc.yml). Highlights:
 - **Provider-per-step**: each step names its `provider` + `model`.
 - **Presets**: `sdlc`, `research`, `triage`, `docs` ship as built-in lifecycles; a repo can override
   or define its own.
@@ -261,14 +261,14 @@ lifecycles. See [`docs/examples/loom.yml`](./docs/examples/loom.yml). Highlights
 ## 5. CLI surface
 
 ```
-loom init                 # detect stack/source, scaffold loom.yml + prompts + labels/statuses
-loom run <task-ref>       # run one task through its lifecycle (foreground)
-loom run --all            # drain all ready tasks (concurrency + backpressure), then exit
-loom watch                # poll the source and drain continuously
-loom feedback <output>    # act on review feedback for an open output (PR/MR) — the feedback loop
-loom resume <task|run>    # resume a blocked/failed/interrupted run, preserving work
-loom lifecycles|providers|executors   # introspection
-loom doctor               # verify provider CLIs, executor, and credentials are wired up
+loomlc init                 # detect stack/source, scaffold loomlc.yml + prompts + labels/statuses
+loomlc run <task-ref>       # run one task through its lifecycle (foreground)
+loomlc run --all            # drain all ready tasks (concurrency + backpressure), then exit
+loomlc watch                # poll the source and drain continuously
+loomlc feedback <output>    # act on review feedback for an open output (PR/MR) — the feedback loop
+loomlc resume <task|run>    # resume a blocked/failed/interrupted run, preserving work
+loomlc lifecycles|providers|executors   # introspection
+loomlc doctor               # verify provider CLIs, executor, and credentials are wired up
 ```
 
 Unattended: a `watch` daemon (systemd user unit / cron), same as strive-ui's setup — but now the work
@@ -281,30 +281,31 @@ happens inside the configured executor's sandbox.
 - **Least-privilege credentials:** repo/task-scoped, short-lived forge tokens (GitHub App preferred);
   per-run provider secrets. Operator's personal creds never enter the sandbox.
 - **Egress allowlist:** only the registry, the forge host, and the provider API host are reachable.
-- **No auto-merge / no push to default branch:** loom proposes; humans merge. Deny rules on
+- **No auto-merge / no push to default branch:** loomlc proposes; humans merge. Deny rules on
   destructive/publishing commands as defense-in-depth.
 - **Prompt-injection awareness:** task text (esp. from public sources) is untrusted input; the
   sandbox + egress allowlist + human gate contain the blast radius. Only trusted maintainers should be
   able to mark a task "ready" for pickup.
-- **Self-modification boundary:** a run cannot silently rewrite loom's own config/prompts — matching
+- **Self-modification boundary:** a run cannot silently rewrite loomlc's own config/prompts — matching
   the lesson that meta-changes need a human (from `strive-ui.io#62`).
 
 ## 7. Distribution / packaging
 
 - **Language:** recommend **Go** — single static binary, excellent for shelling out to CLIs +
   containers, trivial cross-platform distribution. (Alternative: TypeScript compiled with
-  `bun build --compile`, closer to provider SDKs but heavier; loom shells out rather than embeds SDKs,
+  `bun build --compile`, closer to provider SDKs but heavier; loomlc shells out rather than embeds SDKs,
   which favours Go.)
+- **Module path:** `github.com/stritech/loomlc`.
 - **Ship:** GoReleaser → GitHub Releases + Homebrew tap + `curl | sh`; a runtime container image on
   GHCR for the `docker` executor; a Workshop SDK/env spec for the `workshop` executor.
 - **Complementary:** a Claude Code **plugin** (for teams staying on `claude`) and a published
   **GitHub Action** wrapper (turnkey CI usage with a GitHub App token) can reuse the same engine.
 - **License:** open decision — Apache-2.0 or MIT for broad adoption (note: `strive-ui.io` is
-  AGPL-3.0; loom is a separate project and need not match).
+  AGPL-3.0; loomlc is a separate project and need not match).
 
 ## 8. Roadmap
 
-- **Phase 0 — Port.** Recreate the strive-ui flow as loom's `sdlc` preset: `claude` provider +
+- **Phase 0 — Port.** Recreate the strive-ui flow as loomlc's `sdlc` preset: `claude` provider +
   `github` source/sink + `worktree` executor. Prove parity with `agent-runner.sh`.
 - **Phase 1 — Engine.** Config schema; lifecycle runner (order, loops, gates); state store + `resume`;
   scheduler (concurrency + backpressure + `watch`).
@@ -330,17 +331,19 @@ happens inside the configured executor's sandbox.
 
 ## 10. Open decisions
 
-- **Name** (loom is provisional).
+- ~~**Name**~~ — **decided: `loomlc`** (2026-09-10). `loom` collided with Atlassian's Loom in search;
+  `loomdlc` read as SDLC-only and as gaming DLC. `loomlc` was free on apt, snap, Homebrew, npm, and
+  GitHub at decision time.
 - **Language**: Go (recommended) vs TypeScript/Bun.
 - **License**: Apache-2.0 vs MIT.
-- **Config surface**: single `loom.yml` vs split global/per-repo; DAG vs linear steps for v1 (linear
+- **Config surface**: single `loomlc.yml` vs split global/per-repo; DAG vs linear steps for v1 (linear
   first).
-- **`provider` naming collision**: loom's `provider` means *adapter*; pi's `--provider` means *model
+- **`provider` naming collision**: loomlc's `provider` means *adapter*; pi's `--provider` means *model
   vendor*. A step on `pi` needs both. Options: keep `provider:` + add `vendor:` (least disruptive,
-  assumed below), or rename loom's field to `runner:` and free `provider:` for the vendor.
+  assumed below), or rename loomlc's field to `runner:` and free `provider:` for the vendor.
   ```yaml
   - role: engineer
-    provider: pi          # loom adapter
+    provider: pi          # loomlc adapter
     vendor: anthropic     # pi --provider
     model: claude-sonnet-4-5
   ```

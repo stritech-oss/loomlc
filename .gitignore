@@ -8,8 +8,8 @@
 *.test
 *.out
 
-# loom runtime state / local config
-/.loom/
+# loomlc runtime state / local config
+/.loomlc/
 *.log
 
 # Secrets — never commit tokens/keys

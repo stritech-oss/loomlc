@@ -1,4 +1,4 @@
-# loom.yml — example configuration (PROVISIONAL schema; illustrative, subject to change)
+# loomlc.yml — example configuration (PROVISIONAL schema; illustrative, subject to change)
 version: 1
 
 # --- Providers: the CLI runner for a step (installed separately by the operator) ---
@@ -21,7 +21,7 @@ executors:
     type: worktree                 # fast; NOT a security boundary — trusted local use only
   sandbox:
     type: docker                   # portable "real isolation"
-    image: ghcr.io/you/loom-runtime:latest
+    image: ghcr.io/stritech/loomlc-runtime:latest
     user: nonroot
     read_only_rootfs: true
     resources: { cpus: 2, memory: 4g, pids: 512 }
@@ -33,7 +33,7 @@ executors:
       - generativelanguage.googleapis.com
   ubuntu:
     type: workshop                 # Canonical Workshop (Ubuntu/LXD) — best-in-class Linux sandbox
-    env_file: .loom/workshop.yml   # Workshop env spec (SDKs, interfaces/permissions)
+    env_file: .loomlc/workshop.yml # Workshop env spec (SDKs, interfaces/permissions)
     # access controls expressed via Workshop's snapd-style interface system (non-privileged defaults)
 
 # --- Sources: where tasks come from (trigger is configurable) ---
@@ -45,7 +45,7 @@ sources:
     auth: ${GITHUB_APP_TOKEN}      # repo-scoped, short-lived (App installation token)
   backlog:
     type: file
-    path: .loom/backlog.yml        # a plain task list — no forge required
+    path: .loomlc/backlog.yml      # a plain task list — no forge required
 
 # --- Sinks: where results go (independent of the source) ---
 sinks:
