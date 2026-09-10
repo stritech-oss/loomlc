@@ -12,10 +12,16 @@
 /.loomlc/
 *.log
 
-# Secrets — never commit tokens/keys
-*.env
+# Secrets: never commit tokens or keys. Match secret file types, not words in file names,
+# so source files such as token.go aren't silently ignored.
 .env
-*token*
+.env.*
+*.env
+*.pem
+*.key
+*.p12
+*.pfx
+*.token
 !*.example
 
 # Personal agent config — never shared
