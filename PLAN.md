@@ -106,20 +106,80 @@ Provider.run(step, ctx) -> Result
   Result: { text, structured?, artifacts?, session_id?, exit_code }
 ```
 
-Shipped adapters:
-- **claude** — Anthropic. Wraps `claude -p "<prompt>" --permission-mode … --model …`
-  (`--output-format json` for `session_id` + structured output). Reuses the strive-ui invocation.
-- **gemini** — Google Gemini CLI.
-- **codex** — OpenAI Codex/CLI.
-- **exec** — generic escape hatch: run any command matching a small stdin/stdout+exit-code contract,
-  so a provider without a first-class adapter can still be wired in via config.
-
 **The hard part — a capability contract.** CLIs differ in: headless invocation, permission/tool
 models, subagent support, session/resume, and structured output. Each adapter **declares
 capabilities**; the engine targets a normalized contract and **degrades gracefully** (e.g. if a
 provider has no native subagents, the engine runs the step as a single agent; if no structured
 output, it parses a fenced block). A **capability matrix** in the docs tracks what each adapter
-supports. This layer is where most of the real work lives.
+supports. This layer is where most of the real work lives — which is precisely why an **aggregator**
+adapter (family (b) below) is valuable: it amortizes that work across many vendors at once.
+
+Adapters fall into **three families**, and the distinction matters more than the individual entries:
+
+**(a) Vendor CLIs** — the vendor's own agent, driven headless. Subscription auth the user already
+has, plus vendor-specific behaviour (subagents, skills, slash commands, plugins). One adapter per
+vendor, each with its own capability quirks.
+- **claude** — Anthropic. Wraps `claude -p "<prompt>" --permission-mode … --model …`
+  (`--output-format json` for `session_id` + structured output). Reuses the strive-ui invocation.
+  **The Phase 0 adapter** — the strive-ui port depends on Claude subagents and slash commands.
+- **codex** — OpenAI Codex CLI.
+- **antigravity** — Google. Note: Gemini CLI's individual free tier ends 2026-06-18 and it
+  transitions to **Antigravity CLI**; target that, not `gemini`.
+- Further candidates as demand appears: Amp, GitHub Copilot CLI, Amazon Q Developer CLI, Qwen Code,
+  Cursor CLI.
+
+**(b) Multi-provider harnesses ("aggregators")** — a single CLI that itself speaks to many model
+vendors over their HTTP APIs. One adapter buys N vendors behind *one* capability contract.
+- **pi** — see §4.2.1. The recommended first aggregator.
+- Alternatives occupying the same slot: **OpenCode**, **Goose**, **Aider**, **Crush**, Continue's
+  `cn`, Codewhale. Any of these could be a second aggregator adapter; none needs to be, since they
+  overlap heavily with each other in what they unlock.
+
+**(c) Escape hatch**
+- **exec** — run any command matching a small stdin/stdout+exit-code contract, so a runner without a
+  first-class adapter can still be wired in via config.
+
+#### 4.2.1 The `pi` adapter
+
+[**Pi**](https://pi.dev) (MIT, Earendil Inc.) is a minimal agent harness: four built-in tools, a tiny
+system prompt, and a TypeScript extension system for everything else. It reaches **20+ model
+vendors** — Anthropic, OpenAI, Azure, Google Gemini/Vertex, xAI, DeepSeek, Bedrock, Mistral, Groq,
+OpenRouter, Hugging Face, local llama.cpp — via its own unified client (`@earendil-works/pi-ai`),
+**calling provider HTTP APIs directly**. It does *not* shell out to `claude`/`codex`/`gemini`; it
+replaces them. Selection is `--provider <vendor> --model <id>`, switchable mid-session.
+
+Why it earns a place here:
+- **It collapses the capability-matrix problem.** One adapter, one set of headless/session/structured-output
+  semantics, N vendors — instead of N adapters each with their own. This is the single largest
+  reduction available to the hardest part of the engine.
+- **It is fewer moving parts, not more.** For a multi-vendor setup it replaces three CLI installs and
+  three auth conventions with one install and one credential-resolution order.
+- **It does not violate §2's "orchestrator, not harness".** Pi owns the agent loop and the model
+  calls; loom still resolves a step to a subprocess and reads the result.
+
+What it does **not** replace:
+- The **`claude` adapter**. A Claude-Max-only team already has `claude` installed and authenticated;
+  pi asks them to install a second tool, re-auth, and accept a generic agent loop in place of the
+  subagents and slash-commands Phase 0 is built on.
+- **loom.** Pi has no task sources, scheduler, backpressure, cross-run resume, or sinks. Zero overlap
+  with the engine.
+- **The language choice (§7).** Pi is TypeScript/npm. Drive it as a subprocess like any other CLI; do
+  **not** embed its SDK, or Node lands inside loom's single-binary distribution story.
+
+Auth and credentials (feeds §4.4): OAuth `/login` for Claude Pro/Max, ChatGPT Plus/Pro, GitHub
+Copilot and xAI, otherwise API keys. Resolution order is `--api-key` flag → `~/.pi/agent/auth.json`
+→ environment variable → custom-provider keys. Tokens live in `~/.pi/agent/auth.json` (0600) and
+auto-refresh.
+
+Caveats:
+- **No permission system.** Pi's own docs: it "does not include a built-in permission system for
+  restricting filesystem, process, network, or credential access" — it inherits the launching
+  process's permissions. See the executor constraint in §4.4.
+- **Churn.** MIT, but young and fast-moving (launched 2025-08, 60k+ stars by mid-2026). Pin a version
+  and treat the JSON event schema as unstable.
+- **Verify before Phase 3:** that headless mode exposes a **session id + resume** and a **structured
+  final output**. §4.1 resume depends on both. The docs show JSONL sessions, a `SessionManager` API,
+  and a JSON event stream mode, so this is likely — but it is unconfirmed.
 
 ### 4.3 Sources & sinks
 
@@ -148,6 +208,16 @@ Cross-cutting for the isolated executors:
   install deps from the registry but can't reach arbitrary hosts.
 - **Defense in depth:** where a provider CLI supports its own permission model (e.g. Claude's
   allow/deny), loom passes a scoped policy through — but the sandbox is the real boundary.
+- **Adapters with no permission model must be sandboxed.** `pi` (and most aggregators) ship no
+  permission layer at all — they inherit the launching process's access. For those adapters the
+  sandbox is the *only* boundary, so loom **refuses to run them under the `worktree` executor** and
+  requires `docker`/`workshop`. This is an enforced rule, not a recommendation.
+- **Per-run credential isolation for file-based auth stores.** `pi` resolves `~/.pi/agent/auth.json`
+  **ahead of** environment variables. A stale auth file in the sandbox — or a mounted host `~/.pi` —
+  would silently override loom's injected per-run scoped credential and leak the operator's personal
+  subscription into the run, contradicting the rule above. Mitigation: set a per-run `HOME` and pass
+  credentials explicitly (`--api-key`); never rely on env alone for `pi` steps, and never mount host
+  dotfile directories.
 
 ### 4.5 Canonical Workshop as an executor (candidate)
 
@@ -240,7 +310,10 @@ happens inside the configured executor's sandbox.
   scheduler (concurrency + backpressure + `watch`).
 - **Phase 2 — Provider contract.** Formalize the provider interface + capability matrix; solidify the
   `claude` adapter (`--output-format json`, session ids).
-- **Phase 3 — Second provider.** Add `gemini` (or `codex`) to prove **provider-per-step**; add `exec`.
+- **Phase 3 — Second provider.** Add **`pi`** to prove **provider-per-step**; add `exec`. Pi is the
+  better Phase-3 target than a second vendor CLI: one adapter proves the contract across 20+ vendors,
+  it is one install rather than three, and it forces the §4.4 sandbox-required rule early. Native
+  `codex`/`antigravity` adapters become demand-driven additions rather than blockers.
 - **Phase 4 — Sources/sinks.** Interfaces + `github`; then a second source (`gitlab` or `linear`) and
   the `file` backlog source to prove source-agnosticism.
 - **Phase 5 — Isolation.** `docker` executor (non-root, ro-rootfs, egress allowlist) + GitHub App
@@ -262,6 +335,17 @@ happens inside the configured executor's sandbox.
 - **License**: Apache-2.0 vs MIT.
 - **Config surface**: single `loom.yml` vs split global/per-repo; DAG vs linear steps for v1 (linear
   first).
+- **`provider` naming collision**: loom's `provider` means *adapter*; pi's `--provider` means *model
+  vendor*. A step on `pi` needs both. Options: keep `provider:` + add `vendor:` (least disruptive,
+  assumed below), or rename loom's field to `runner:` and free `provider:` for the vendor.
+  ```yaml
+  - role: engineer
+    provider: pi          # loom adapter
+    vendor: anthropic     # pi --provider
+    model: claude-sonnet-4-5
+  ```
+- **Which aggregator**: `pi` recommended; OpenCode/Goose/Aider/Crush occupy the same slot. Shipping
+  more than one buys little — they overlap in the vendors they unlock.
 - **Run/state store**: local files vs SQLite (SQLite once resume/parallelism matter).
 - **Workshop integration**: confirm non-interactive `exec` + egress-control granularity before making
   it a first-class executor.
@@ -271,6 +355,13 @@ happens inside the configured executor's sandbox.
 - Reference implementation & lessons: sibling repo `strive-ui.io` — `scripts/agent-runner.sh`,
   `.claude/agents/*`, `.claude/commands/{implement-issue,address-feedback}.md`; and issues
   #62 (meta-issue permission wall), #66 (resume), plus the 5-PR cap / feedback-loop / scoped-token work.
+- Pi (aggregator provider adapter):
+  - Site — https://pi.dev
+  - Source — https://github.com/earendil-works/pi
+  - Providers & auth — https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md
+  - Unified LLM API — https://github.com/earendil-works/pi/tree/main/packages/ai
+- CLI agent landscape (adapter candidates) —
+  https://github.com/bradAGI/awesome-cli-coding-agents
 - Canonical Workshop:
   - Announcement — https://canonical.com/blog/introducing-workshop-sandboxed-development-environments
   - Docs — https://documentation.ubuntu.com/canonical-workshop/stable/

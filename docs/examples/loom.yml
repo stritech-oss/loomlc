@@ -1,12 +1,18 @@
 # loom.yml — example configuration (PROVISIONAL schema; illustrative, subject to change)
 version: 1
 
-# --- Providers: how to invoke each provider's own CLI (installed separately by the operator) ---
+# --- Providers: the CLI runner for a step (installed separately by the operator) ---
 providers:
+  # (a) Vendor CLIs — the vendor's own agent, its own subscription auth, its own extras.
   claude:   { cmd: claude }        # Anthropic
-  gemini:   { cmd: gemini }        # Google
   codex:    { cmd: codex }         # OpenAI
-  # A provider with no first-class adapter can be wired via the generic `exec` contract:
+  gemini:   { cmd: gemini }        # Google (Gemini CLI -> Antigravity CLI; see PLAN.md 4.2)
+
+  # (b) Aggregator — one CLI, 20+ model vendors over their HTTP APIs. Steps using it must
+  #     name a `vendor:` as well as a `model:`, and MUST run on an isolated executor (PLAN.md 4.4).
+  pi:       { cmd: pi, requires_sandbox: true }
+
+  # (c) A runner with no first-class adapter can be wired via the generic `exec` contract:
   # myllm:  { adapter: exec, cmd: "myllm --headless", stdin: prompt, stdout: result }
 
 # --- Executors: the workspace + isolation a run happens in ---
@@ -66,6 +72,10 @@ lifecycles:
         provider: gemini           # plan with Gemini …
         role: prompts/planner.md
         readonly: true
+        # …or reach the same class of model through the aggregator instead of a second CLI:
+        #   provider: pi
+        #   vendor: google
+        #   model: gemini-3-pro
       - name: engineer
         provider: claude           # … build with Claude …
         role: prompts/engineer.md
