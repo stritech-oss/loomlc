@@ -53,9 +53,12 @@ These are enforced by the `commit-msg` hook and by CI. Details are in `docs/cont
   type a `Signed-off-by` line by hand or add one for someone else.
 - **A human signs off.** Bot- and agent-only sign-offs are rejected. If you commit under an agent
   identity, a human adds their sign-off after reviewing the change.
-- **Commits are signed** with the author's key. Don't pass `--no-gpg-sign`.
 - **Conventional Commits**: header of 72 characters or fewer, imperative, no trailing period, one
   logical change per commit.
+
+Also sign commits locally with the author's key, and don't pass `--no-gpg-sign`. Signing isn't
+enforced: GitHub's rebase merge drops signatures, so commits on `main` are unsigned. The sign-off is
+the rule that counts.
 
 Before pushing, run `scripts/commit-policy.sh range origin/main HEAD`.
 
@@ -95,4 +98,6 @@ Follow `docs/conventions.md`. Highlights:
 - There are no build or test commands yet, apart from `scripts/commit-policy.test.sh`. A commands
   table goes here once the language is chosen.
 - `docs/conventions.md` has no language-specific section yet.
-- Signed commits and code-owner review are only enforced once branch protection is enabled on GitHub.
+- Code-owner review and the Commit policy check only become required once branch protection is
+  enabled on GitHub. Branch protection doesn't require signed commits, because that would block
+  rebase merges.
