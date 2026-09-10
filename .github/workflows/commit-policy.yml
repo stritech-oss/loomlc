@@ -1,0 +1,40 @@
+name: Commit policy
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  commits:
+    name: Commit messages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # walk the full PR range
+
+      - name: Test the policy checker
+        run: scripts/commit-policy.test.sh
+
+      - name: Check every commit in the pull request
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/commit-policy.sh range "$BASE_SHA" "$HEAD_SHA"
+
+  description:
+    name: PR description
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The body goes through an env var, never inline ${{ }} in the script, so it can't inject shell.
+      - name: Check the description for agent attribution
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s\n' "$PR_BODY" > "$RUNNER_TEMP/pr-body.md"
+          scripts/commit-policy.sh text "$RUNNER_TEMP/pr-body.md"
