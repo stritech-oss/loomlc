@@ -1,0 +1,4 @@
+#!/bin/sh
+# Enforce the commit message policy locally. Enable once per clone:
+#   git config core.hooksPath .githooks
+exec "$(git rev-parse --show-toplevel)/scripts/commit-policy.sh" msg "$1"
