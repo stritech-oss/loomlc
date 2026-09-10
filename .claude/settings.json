@@ -1,0 +1,51 @@
+{
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git rev-parse *)",
+      "Bash(git fetch *)",
+      "Bash(git switch *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push -u origin feat/*)",
+      "Bash(git push -u origin bug/*)",
+      "Bash(git push -u origin doc/*)",
+      "Bash(git push -u origin mnt/*)",
+      "Bash(git push origin feat/*)",
+      "Bash(git push origin bug/*)",
+      "Bash(git push origin doc/*)",
+      "Bash(git push origin mnt/*)",
+      "Bash(gh issue view *)",
+      "Bash(gh issue list *)",
+      "Bash(gh issue comment *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh pr comment *)",
+      "Bash(scripts/commit-policy.sh *)",
+      "Bash(scripts/commit-policy.test.sh)"
+    ],
+    "deny": [
+      "Bash(git push * main)",
+      "Bash(git push *:main)",
+      "Bash(git push *--force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * -f*)",
+      "Bash(git commit *--no-verify*)",
+      "Bash(git commit *--no-gpg-sign*)",
+      "Bash(git config *core.hooksPath*)",
+      "Bash(gh pr merge *)",
+      "Bash(gh release *)",
+      "Bash(gh repo delete *)"
+    ]
+  }
+}
