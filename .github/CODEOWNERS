@@ -1,0 +1,11 @@
+# Agent rules, the commit policy, and CI are human-owned. With branch protection's
+# "Require review from Code Owners" enabled, changes here need a maintainer's approval,
+# so an agent can't loosen its own rules.
+/AGENTS.md              @pedoch
+/CLAUDE.md              @pedoch
+/.claude/               @pedoch
+/.githooks/             @pedoch
+/.github/               @pedoch
+/scripts/commit-policy* @pedoch
+/docs/contributing.md   @pedoch
+/docs/conventions.md    @pedoch
