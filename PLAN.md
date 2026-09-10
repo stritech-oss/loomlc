@@ -295,7 +295,7 @@ happens inside the configured executor's sandbox.
   containers, trivial cross-platform distribution. (Alternative: TypeScript compiled with
   `bun build --compile`, closer to provider SDKs but heavier; loomlc shells out rather than embeds SDKs,
   which favours Go.)
-- **Module path:** `github.com/stritech/loomlc`.
+- **Module path:** `github.com/stritech-oss/loomlc`.
 - **Ship:** GoReleaser → GitHub Releases + Homebrew tap + `curl | sh`; a runtime container image on
   GHCR for the `docker` executor; a Workshop SDK/env spec for the `workshop` executor.
 - **Complementary:** a Claude Code **plugin** (for teams staying on `claude`) and a published
