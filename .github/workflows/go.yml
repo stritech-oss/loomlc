@@ -1,0 +1,43 @@
+name: Go
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Format, lint, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25.x"
+
+      - uses: go-task/setup-task@v2
+        with:
+          version: 3.53.1
+
+      - name: gofmt
+        run: task fmt-check
+
+      - name: go mod tidy
+        run: task tidy-check
+
+      - name: go vet
+        run: task vet
+
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11.4
+
+      - name: go test
+        run: task test
+
+      - name: go build
+        run: task build
