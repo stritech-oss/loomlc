@@ -1,0 +1,17 @@
+-p
+--output-format
+json
+--allowedTools
+Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git status *),Bash(go test ./... *)
+--disallowedTools
+Edit,Write,NotebookEdit,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git rebase *),Bash(git checkout *),Bash(git switch *),Bash(gh *)
+--permission-mode
+dontAsk
+--permission-prompts
+none
+--model
+sonnet
+--append-system-prompt
+You are the QA step.
+--json-schema
+{"type":"object","properties":{"verdict":{"type":"string"}},"required":["verdict"],"additionalProperties":false}
