@@ -31,10 +31,42 @@ type result struct {
 	stdout, stderr string
 }
 
+// fakePath returns a LookPath that finds only the executables in paths.
+func fakePath(paths map[string]string) func(string) (string, error) {
+	return func(name string) (string, error) {
+		if path, ok := paths[name]; ok {
+			return path, nil
+		}
+		return "", fs.ErrNotExist
+	}
+}
+
 func run(args []string, files map[string]string) result {
 	var stdout, stderr bytes.Buffer
-	code := Main(args, Env{Stdout: &stdout, Stderr: &stderr, ReadFile: fakeFiles(files)})
+	env := Env{
+		Stdout:   &stdout,
+		Stderr:   &stderr,
+		ReadFile: fakeFiles(files),
+		LookPath: fakePath(map[string]string{"claude": "/usr/local/bin/claude"}),
+	}
+	code := Main(args, env)
 	return result{code: code, stdout: stdout.String(), stderr: stderr.String()}
+}
+
+func TestProvidersPrintsInstallStateAndCapabilities(t *testing.T) {
+	files := map[string]string{"loomlc.yml": "providers:\n  fast-claude:\n    adapter: claude\n    cmd: /opt/claude-beta/claude\n"}
+	got := run([]string{"providers"}, files)
+	if got.code != ExitOK || got.stderr != "" {
+		t.Fatalf("exit code = %d, stderr = %q", got.code, got.stderr)
+	}
+	golden(t, "providers", got.stdout)
+}
+
+func TestProvidersReportsConfigErrors(t *testing.T) {
+	got := run([]string{"providers", "--config", "missing.yml"}, nil)
+	if got.code != ExitUsage || !strings.Contains(got.stderr, "loomlc providers: read configuration") {
+		t.Errorf("exit code = %d, stderr = %q; want %d and a read error", got.code, got.stderr, ExitUsage)
+	}
 }
 
 // golden compares got with testdata/<name>.golden, rewriting the file when -update is set.
