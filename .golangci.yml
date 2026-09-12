@@ -1,22 +1,36 @@
 version: "2"
 
-# Import-boundary rules (depguard: engine vs adapters) and API bans (forbidigo: exec only in
-# internal/proc, time.Now only in internal/clock) land with the packages they govern, so each rule
-# is tested against a real violation when it's added.
+# Import-boundary rules (depguard: engine vs adapters) and further API bans land with the packages
+# they govern, so each rule is tested against a real violation when it's added.
 
 linters:
   default: standard
   enable:
     - bodyclose
     - errorlint
+    - forbidigo
     - gosec
     - misspell
     - nolintlint
     - unparam
   settings:
+    forbidigo:
+      forbid:
+        - pattern: ^exec\.Command(Context)?$
+          msg: run subprocesses through internal/proc (docs/conventions.md)
     nolintlint:
       require-explanation: true
       require-specific: true
+  exclusions:
+    rules:
+      - path: internal/proc/
+        linters:
+          - forbidigo
+      # Tests write fixtures to temp paths and re-run their own binary as a helper process; gosec's
+      # taint checks only add noise there.
+      - path: _test\.go
+        linters:
+          - gosec
 
 formatters:
   enable:
