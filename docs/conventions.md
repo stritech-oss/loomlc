@@ -1,8 +1,8 @@
 # Code conventions
 
-These conventions apply to all code in loomlc. They're language-neutral while the implementation
-language is still an open decision ([`PLAN.md` §10](../PLAN.md#10-open-decisions)). When it's decided,
-add a section for that language at the end instead of restating these rules.
+These conventions apply to all code in loomlc. The general rules come first; the [Go](#go) section
+at the end applies them to Go, loomlc's implementation language
+([`PLAN.md` §10](../PLAN.md#10-open-decisions)).
 
 ## Design
 
@@ -70,5 +70,34 @@ loomlc passes untrusted task text to agents that hold real credentials
 
 ## Formatting and linting
 
-Formatting is automated, never argued in review. When the language is chosen, its standard formatter
-and linter become required CI checks, and this section names them.
+Formatting is automated, never argued in review. `gofmt` and `goimports` format the code, and
+golangci-lint (configured in `.golangci.yml`) lints it. Both are required CI checks; run
+`task check` before pushing.
+
+## Go
+
+These apply the rules above to Go. Where they differ from general Go advice, these win.
+
+- **Layout.** The binary lives in `cmd/loomlc`. Everything else goes under `internal/`, so nothing is
+  importable from outside the module. Name packages after what they provide (`config`, `worktree`),
+  never `util` or `common`.
+- **Contexts.** A function that does I/O, runs a subprocess, or can block takes a `context.Context` as
+  its first parameter and honors cancellation.
+- **Errors.** Wrap with `%w` and the action being attempted:
+  `fmt.Errorf("claim task %s: %w", ref, err)`. Check errors with `errors.Is` and `errors.As`, never by
+  comparing strings. Return errors; don't log them and carry on.
+- **Interfaces.** Declare them in the package that consumes them, with only the methods it calls.
+  Constructors return concrete types.
+- **No hidden state.** No mutable package-level variables and no `init` functions. Pass the clock,
+  process runner, environment, and filesystem in. The one exception is `internal/version.Version`,
+  which the linker sets.
+- **Subprocesses.** Only `internal/proc` imports `os/exec`, and it always uses an argument vector.
+  Everything else runs commands through its `Runner` interface.
+- **Output.** Commands write to the `io.Writer`s they're given, never to `os.Stdout` or `os.Stderr`
+  directly, so they can be tested.
+- **Tests.** Table-driven, with `t.Run` names that describe the behavior. Test data lives in
+  `testdata/`. Golden files are regenerated with `go test ./internal/<pkg> -update` and reviewed like
+  code. Test external commands with fakes or the helper-process pattern, never the real tool. Run
+  tests with `-race`.
+- **Dependencies.** Prefer the standard library. A new module needs a reason in the pull request
+  description, and `go mod tidy` must leave `go.mod` and `go.sum` unchanged.

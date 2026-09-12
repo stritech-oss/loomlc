@@ -15,9 +15,11 @@ It's an **orchestrator, not a harness**: it never calls model APIs itself.
 
 ## Status
 
-**Design phase. Nothing is implemented yet.** The implementation language (Go is recommended),
-license, and config surface are open decisions ([`PLAN.md` §10](PLAN.md#10-open-decisions)). Don't
-scaffold code, choose a language, or add a build system unless the task asks for it.
+**Phase 0 in progress.** loomlc is written in Go (module `github.com/stritech-oss/loomlc`) and
+licensed under Apache-2.0. Phase 0 ([`PLAN.md` §8](PLAN.md#8-roadmap)) builds the `sdlc` lifecycle
+one pull request at a time; only the CLI scaffold exists so far. Don't add packages, commands, or
+dependencies beyond the task you were given. The config surface is still an open decision
+([`PLAN.md` §10](PLAN.md#10-open-decisions)).
 
 ## Source-of-truth docs (read, don't restate)
 
@@ -33,14 +35,38 @@ If your change contradicts one of these, update the doc in the same pull request
 
 ```
 PLAN.md                    design plan
+cmd/loomlc/                CLI entrypoint
+internal/                  implementation packages (not importable outside the module)
 docs/contributing.md       process rules
 docs/conventions.md        code rules
 docs/examples/loomlc.yml   example config
+Taskfile.yml               development tasks, run with `task`
+.golangci.yml              lint and format configuration
 scripts/commit-policy.sh   commit and PR description checker (hook and CI)
 .githooks/commit-msg       local hook that runs the checker
 .github/                   PR template, CODEOWNERS, CI workflows
 .claude/settings.json      Claude Code project settings
+LICENSE                    Apache-2.0
 ```
+
+## Commands
+
+Development tasks live in `Taskfile.yml` and run with [Task](https://taskfile.dev). Install two tools
+yourself: Task v3 (CI pins 3.53.1) and golangci-lint v2.11.4.
+
+| Task | Command |
+|---|---|
+| List every task | `task --list` |
+| Run every check CI runs | `task check` |
+| Format code | `task fmt` (`task fmt-check` only reports) |
+| Lint | `task lint` (golangci-lint v2.11.4, `.golangci.yml`) |
+| Test | `task test` (`go test -race -count=1 ./...`) |
+| Build | `task build` (writes `bin/loomlc`) |
+| Test the commit policy checker | `task policy` |
+| Check your branch's commits | `scripts/commit-policy.sh range origin/main HEAD` |
+
+Run `task check` before opening a pull request. CI runs the same checks in
+`.github/workflows/go.yml` and `.github/workflows/commit-policy.yml`.
 
 ## Commit rules
 
@@ -95,9 +121,8 @@ Follow `docs/conventions.md`. Highlights:
 
 ## Known gaps
 
-- There are no build or test commands yet, apart from `scripts/commit-policy.test.sh`. A commands
-  table goes here once the language is chosen.
-- `docs/conventions.md` has no language-specific section yet.
+- Only the CLI scaffold exists. Phase 0 packages land one pull request at a time, and each adds its
+  own import-boundary lint rules (depguard, forbidigo) when it arrives.
 - Code-owner review and the Commit policy check only become required once branch protection is
   enabled on GitHub. Branch protection doesn't require signed commits, because that would block
   rebase merges.
