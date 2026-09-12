@@ -10,9 +10,17 @@ import (
 
 // Exit codes returned by Main.
 const (
-	ExitOK    = 0
-	ExitUsage = 2
+	ExitOK      = 0
+	ExitFailure = 1
+	ExitUsage   = 2
 )
+
+// Env is what commands use from outside the process, so they can be tested without touching it.
+type Env struct {
+	Stdout, Stderr io.Writer
+	// ReadFile reads the named file. main passes os.ReadFile.
+	ReadFile func(name string) ([]byte, error)
+}
 
 const usage = `loomlc runs tasks through lifecycles of agent steps.
 
@@ -20,38 +28,41 @@ Usage:
   loomlc <command> [arguments]
 
 Commands:
-  version    print the loomlc version
-  help       print this help
+  lifecycles  print the lifecycles in the resolved configuration
+  version     print the loomlc version
+  help        print this help
 `
 
 // Main runs the command named by args and returns the process exit code.
-func Main(args []string, stdout, stderr io.Writer) int {
+func Main(args []string, env Env) int {
 	if len(args) == 0 {
-		return fail(stderr, usage)
+		return fail(env.Stderr, usage)
 	}
 
 	switch cmd, rest := args[0], args[1:]; cmd {
+	case "lifecycles":
+		return runLifecycles(rest, env)
 	case "version":
-		return runVersion(rest, stdout, stderr)
+		return runVersion(rest, env)
 	case "help", "-h", "--help":
-		return print(stdout, usage)
+		return print(env.Stdout, usage)
 	default:
-		return fail(stderr, fmt.Sprintf("loomlc: unknown command %q\n\n%s", cmd, usage))
+		return fail(env.Stderr, fmt.Sprintf("loomlc: unknown command %q\n\n%s", cmd, usage))
 	}
 }
 
-func runVersion(args []string, stdout, stderr io.Writer) int {
+func runVersion(args []string, env Env) int {
 	if len(args) > 0 {
-		return fail(stderr, fmt.Sprintf("loomlc version: unexpected arguments %q\n", args))
+		return fail(env.Stderr, fmt.Sprintf("loomlc version: unexpected arguments %q\n", args))
 	}
-	return print(stdout, fmt.Sprintf("loomlc %s\n", version.Version))
+	return print(env.Stdout, fmt.Sprintf("loomlc %s\n", version.Version))
 }
 
 // print writes msg to w and reports success. A failed write to stdout can't be reported anywhere
 // useful, so it only affects the exit code.
 func print(w io.Writer, msg string) int {
 	if _, err := io.WriteString(w, msg); err != nil {
-		return 1
+		return ExitFailure
 	}
 	return ExitOK
 }
