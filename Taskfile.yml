@@ -1,0 +1,69 @@
+# Development tasks, run with Task (https://taskfile.dev): `task <name>`, or `task --list` to see
+# them all. CI installs Task 3.53.1 with go-task/setup-task.
+version: "3"
+
+tasks:
+  default:
+    desc: Run every check CI runs
+    cmds:
+      - task: check
+
+  check:
+    desc: Run every check CI runs (format, tidy, vet, lint, test, commit policy, build)
+    cmds:
+      - task: fmt-check
+      - task: tidy-check
+      - task: vet
+      - task: lint
+      - task: test
+      - task: policy
+      - task: build
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - gofmt -w .
+
+  fmt-check:
+    desc: Fail if any Go file needs formatting
+    cmds:
+      - |
+        unformatted="$(gofmt -l .)"
+        if [ -n "$unformatted" ]; then
+          echo "run 'task fmt' to format:"
+          echo "$unformatted"
+          exit 1
+        fi
+
+  tidy-check:
+    desc: Fail if go.mod or go.sum need tidying
+    cmds:
+      - go mod tidy -diff
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run
+
+  test:
+    desc: Run tests with the race detector
+    cmds:
+      - go test -race -count=1 ./...
+
+  policy:
+    desc: Test the commit policy checker
+    cmds:
+      - scripts/commit-policy.test.sh
+
+  build:
+    desc: Build bin/loomlc
+    vars:
+      VERSION:
+        sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+    cmds:
+      - go build -trimpath -ldflags "-X github.com/stritech-oss/loomlc/internal/version.Version={{.VERSION}}" -o bin/loomlc ./cmd/loomlc
