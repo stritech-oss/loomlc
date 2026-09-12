@@ -1,0 +1,7 @@
+Configuration: loomlc.yml merged over the built-in sdlc preset
+
+PROVIDER     ADAPTER  COMMAND                  INSTALLED              CAPABILITIES
+claude       claude   claude                   /usr/local/bin/claude  structured output, resume, own permissions, system prompt, cost report
+codex        codex    codex                    not found              adapter not available yet
+fast-claude  claude   /opt/claude-beta/claude  not found              structured output, resume, own permissions, system prompt, cost report
+pi           pi       pi                       not found              adapter not available yet

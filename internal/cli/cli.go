@@ -20,6 +20,8 @@ type Env struct {
 	Stdout, Stderr io.Writer
 	// ReadFile reads the named file. main passes os.ReadFile.
 	ReadFile func(name string) ([]byte, error)
+	// LookPath finds an executable in PATH. main passes proc.Exec{}.LookPath.
+	LookPath func(name string) (string, error)
 }
 
 const usage = `loomlc runs tasks through lifecycles of agent steps.
@@ -29,6 +31,7 @@ Usage:
 
 Commands:
   lifecycles  print the lifecycles in the resolved configuration
+  providers   print the configured providers and what their adapters support
   version     print the loomlc version
   help        print this help
 `
@@ -42,6 +45,8 @@ func Main(args []string, env Env) int {
 	switch cmd, rest := args[0], args[1:]; cmd {
 	case "lifecycles":
 		return runLifecycles(rest, env)
+	case "providers":
+		return runProviders(rest, env)
 	case "version":
 		return runVersion(rest, env)
 	case "help", "-h", "--help":
