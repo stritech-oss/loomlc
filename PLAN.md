@@ -291,8 +291,8 @@ happens inside the configured executor's sandbox.
 
 ## 7. Distribution / packaging
 
-- **Language:** recommend **Go** — single static binary, excellent for shelling out to CLIs +
-  containers, trivial cross-platform distribution. (Alternative: TypeScript compiled with
+- **Language:** **Go** (decided, §10) — single static binary, excellent for shelling out to CLIs +
+  containers, trivial cross-platform distribution. (The alternative was TypeScript compiled with
   `bun build --compile`, closer to provider SDKs but heavier; loomlc shells out rather than embeds SDKs,
   which favours Go.)
 - **Module path:** `github.com/stritech-oss/loomlc`.
@@ -300,8 +300,7 @@ happens inside the configured executor's sandbox.
   GHCR for the `docker` executor; a Workshop SDK/env spec for the `workshop` executor.
 - **Complementary:** a Claude Code **plugin** (for teams staying on `claude`) and a published
   **GitHub Action** wrapper (turnkey CI usage with a GitHub App token) can reuse the same engine.
-- **License:** open decision — Apache-2.0 or MIT for broad adoption (note: `strive-ui.io` is
-  AGPL-3.0; loomlc is a separate project and need not match).
+- **License:** **Apache-2.0** (decided, §10).
 
 ## 8. Roadmap
 
@@ -334,8 +333,9 @@ happens inside the configured executor's sandbox.
 - ~~**Name**~~ — **decided: `loomlc`** (2026-09-10). `loom` collided with Atlassian's Loom in search;
   `loomdlc` read as SDLC-only and as gaming DLC. `loomlc` was free on apt, snap, Homebrew, npm, and
   GitHub at decision time.
-- **Language**: Go (recommended) vs TypeScript/Bun.
-- **License**: Apache-2.0 vs MIT.
+- ~~**Language**~~ — **decided: Go** (2026-09-12). A single static binary with first-class process
+  control suits an orchestrator that drives provider CLIs (§7).
+- ~~**License**~~ — **decided: Apache-2.0** (2026-09-12). Permissive, with an explicit patent grant.
 - **Config surface**: single `loomlc.yml` vs split global/per-repo; DAG vs linear steps for v1 (linear
   first).
 - **`provider` naming collision**: loomlc's `provider` means *adapter*; pi's `--provider` means *model
