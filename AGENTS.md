@@ -17,9 +17,8 @@ It's an **orchestrator, not a harness**: it never calls model APIs itself.
 
 **Phase 0 in progress.** loomlc is written in Go (module `github.com/stritech-oss/loomlc`) and
 licensed under Apache-2.0. Phase 0 ([`PLAN.md` §8](PLAN.md#8-roadmap)) builds the `sdlc` lifecycle
-one pull request at a time; only the CLI scaffold exists so far. Don't add packages, commands, or
-dependencies beyond the task you were given. The config surface is still an open decision
-([`PLAN.md` §10](PLAN.md#10-open-decisions)).
+one pull request at a time, so check `internal/` for what exists. Don't add packages, commands, or
+dependencies beyond the task you were given.
 
 ## Source-of-truth docs (read, don't restate)
 
@@ -27,7 +26,8 @@ dependencies beyond the task you were given. The config surface is still an open
 - **`docs/contributing.md`**: branches, commit format, sign-off, signing, attribution, pull requests.
   **Authoritative for process.**
 - **`docs/conventions.md`**: design, errors, security, and testing rules. **Authoritative for code.**
-- **`docs/examples/loomlc.yml`**: the provisional config schema.
+- **`docs/config.md`**: the `loomlc.yml` schema Phase 0 supports. **Authoritative for configuration.**
+- **`docs/examples/loomlc.yml`**: where the configuration schema is headed beyond Phase 0.
 
 If your change contradicts one of these, update the doc in the same pull request, or stop and ask.
 
@@ -37,9 +37,11 @@ If your change contradicts one of these, update the doc in the same pull request
 PLAN.md                    design plan
 cmd/loomlc/                CLI entrypoint
 internal/                  implementation packages (not importable outside the module)
+internal/config/preset/    the built-in sdlc preset
 docs/contributing.md       process rules
 docs/conventions.md        code rules
-docs/examples/loomlc.yml   example config
+docs/config.md             configuration reference
+docs/examples/loomlc.yml   future configuration sketch
 Taskfile.yml               development tasks, run with `task`
 .golangci.yml              lint and format configuration
 scripts/commit-policy.sh   commit and PR description checker (hook and CI)
@@ -121,8 +123,8 @@ Follow `docs/conventions.md`. Highlights:
 
 ## Known gaps
 
-- Only the CLI scaffold exists. Phase 0 packages land one pull request at a time, and each adds its
-  own import-boundary lint rules (depguard, forbidigo) when it arrives.
+- Phase 0 packages land one pull request at a time, and each adds its own import-boundary lint rules
+  (depguard, forbidigo) when it arrives.
 - Code-owner review and the Commit policy check only become required once branch protection is
   enabled on GitHub. Branch protection doesn't require signed commits, because that would block
   rebase merges.
