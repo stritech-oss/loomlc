@@ -83,6 +83,13 @@ The preset defines `local`.
 | `root` | `.loomlc/worktrees` | Directory that holds workspaces. |
 | `remote` | `origin` | Git remote that workspaces fetch from and push to. |
 
+A `worktree` workspace is a git worktree of your checkout, in `<root>/<task>`, with the task's branch
+started from the remote's latest base branch. It keeps runs out of each other's files, but it isn't a
+security boundary: a run has your user account's full access. Before a run resets a branch that has
+local commits the remote doesn't, loomlc saves them under `refs/loomlc/attempts/<branch>/<run>`, so an
+earlier attempt's work is never lost. When a run ends, its workspace is removed, including uncommitted
+changes; the branch and its commits stay.
+
 ### `sources.<name>`
 
 The preset defines `github`.
