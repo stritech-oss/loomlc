@@ -41,6 +41,7 @@ internal/config/preset/    the built-in sdlc preset
 docs/contributing.md       process rules
 docs/conventions.md        code rules
 docs/config.md             configuration reference
+docs/providers.md          provider adapters and what they support
 docs/examples/loomlc.yml   future configuration sketch
 Taskfile.yml               development tasks, run with `task`
 .golangci.yml              lint and format configuration
