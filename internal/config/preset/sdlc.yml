@@ -1,0 +1,76 @@
+# The built-in sdlc preset: loomlc's defaults, matching strive-ui.io's agent-runner.sh flow.
+# A repository's loomlc.yml is merged over this file; see docs/config.md.
+version: 1
+
+providers:
+  claude:
+    cmd: claude
+    permission_mode: acceptEdits
+  codex:
+    cmd: codex
+  pi:
+    cmd: pi
+
+executors:
+  local:
+    type: worktree
+    root: .loomlc/worktrees
+    remote: origin
+
+sources:
+  github:
+    type: github
+    trigger:
+      label: agent-ready
+    labels:
+      in_progress: agent-in-progress
+      done: agent-done
+      failed: agent-failed
+
+sinks:
+  github-pr:
+    type: github-pr
+    base: main
+    label: agent-pr
+    template: .github/pull_request_template.md
+    template_sections:
+      description: ["Done / Description", "Description", "Summary"]
+      qa: ["QA", "Testing"]
+      issue: ["Issue / Card", "Issue", "Related issues"]
+    feedback:
+      label: agent-revise
+      in_progress: agent-revise-in-progress
+      since_last_reply: true
+
+lifecycles:
+  sdlc:
+    executor: local
+    source: github
+    sink: github-pr
+    concurrency: 3
+    max_open_outputs: 5
+    watch_interval: 5m
+    branch: "feat/issue-{{.Number}}-{{.Slug}}"
+    protected_paths: [loomlc.yml, prompts]
+    steps:
+      - name: plan
+        provider: claude
+        model: sonnet
+        role: planner
+        readonly: true
+        timeout: 30m
+      - name: engineer
+        provider: claude
+        model: sonnet
+        role: engineer
+        loop_with: qa
+        max_iter: 5
+        timeout: 60m
+      - name: qa
+        provider: claude
+        model: sonnet
+        role: qa
+        readonly: true
+        timeout: 30m
+    feedback:
+      steps: [engineer, qa]
