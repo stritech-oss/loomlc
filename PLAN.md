@@ -336,14 +336,16 @@ happens inside the configured executor's sandbox.
 - ~~**Language**~~ — **decided: Go** (2026-09-12). A single static binary with first-class process
   control suits an orchestrator that drives provider CLIs (§7).
 - ~~**License**~~ — **decided: Apache-2.0** (2026-09-12). Permissive, with an explicit patent grant.
-- **Config surface**: single `loomlc.yml` vs split global/per-repo; DAG vs linear steps for v1 (linear
-  first).
-- **`provider` naming collision**: loomlc's `provider` means *adapter*; pi's `--provider` means *model
-  vendor*. A step on `pi` needs both. Options: keep `provider:` + add `vendor:` (least disruptive,
-  assumed below), or rename loomlc's field to `runner:` and free `provider:` for the vendor.
+- ~~**Config surface**~~ — **decided for Phase 0** (2026-09-12): one `loomlc.yml` per repository,
+  merged over a built-in `sdlc` preset, with a fixed linear shape (a plan step, then a change step that
+  loops with a verdict step). Global configuration and DAG lifecycles can come later. See
+  [`docs/config.md`](./docs/config.md).
+- ~~**`provider` naming collision**~~ — **decided: `provider:` + `vendor:`** (2026-09-12). A step's
+  `provider` names a loomlc provider, and through it the adapter; `vendor` is the model vendor that an
+  aggregator such as pi calls, and is rejected for other adapters.
   ```yaml
-  - role: engineer
-    provider: pi          # loomlc adapter
+  - name: engineer
+    provider: pi          # loomlc provider
     vendor: anthropic     # pi --provider
     model: claude-sonnet-4-5
   ```
