@@ -1,0 +1,13 @@
+-p
+--output-format
+json
+--allowedTools
+Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git status *)
+--disallowedTools
+Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git rebase *),Bash(git checkout *),Bash(git switch *),Bash(gh *)
+--permission-mode
+acceptEdits
+--permission-prompts
+none
+--resume
+00000000-0000-4000-8000-000000000001

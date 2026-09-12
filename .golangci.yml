@@ -7,6 +7,7 @@ linters:
   default: standard
   enable:
     - bodyclose
+    - depguard
     - errorlint
     - forbidigo
     - gosec
@@ -14,6 +15,18 @@ linters:
     - nolintlint
     - unparam
   settings:
+    depguard:
+      rules:
+        provider-adapters:
+          files:
+            - "**/internal/provider/*/*.go"
+          deny:
+            - pkg: github.com/stritech-oss/loomlc/internal/provider/
+              desc: provider adapters don't import each other; share code through internal/provider (docs/conventions.md)
+            - pkg: github.com/stritech-oss/loomlc/internal/config
+              desc: adapters get their settings from the caller, not from loomlc.yml (docs/conventions.md)
+            - pkg: github.com/stritech-oss/loomlc/internal/cli
+              desc: adapters don't depend on the command line (docs/conventions.md)
     forbidigo:
       forbid:
         - pattern: ^exec\.Command(Context)?$

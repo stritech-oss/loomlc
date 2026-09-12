@@ -1,0 +1,15 @@
+-p
+--output-format
+json
+--allowedTools
+Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git status *),Bash(go build ./... *),Bash(go test *)
+--disallowedTools
+Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git rebase *),Bash(git checkout *),Bash(git switch *),Bash(gh *)
+--permission-mode
+acceptEdits
+--permission-prompts
+none
+--model
+opus
+--append-system-prompt
+You are the engineer step.
