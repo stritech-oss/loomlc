@@ -1,0 +1,13 @@
+Configuration: the built-in sdlc preset (no loomlc.yml found)
+
+sdlc
+  executor  local (worktree, workspaces in .loomlc/worktrees)
+  source    github (github, picks up label agent-ready)
+  sink      github-pr (github-pr into main, label agent-pr)
+  limits    3 at a time, pause at 5 open outputs, watch every 5m
+  branch    feat/issue-{{.Number}}-{{.Slug}}
+
+  STEP      PROVIDER  MODEL   ROLE      OUTPUT   ACCESS       LOOP            TIMEOUT
+  plan      claude    sonnet  planner   plan     read-only    -               30m
+  engineer  claude    sonnet  engineer  change   edits files  with qa, max 5  1h
+  qa        claude    sonnet  qa        verdict  read-only    -               30m

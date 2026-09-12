@@ -8,5 +8,5 @@ import (
 )
 
 func main() {
-	os.Exit(cli.Main(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(cli.Main(os.Args[1:], cli.Env{Stdout: os.Stdout, Stderr: os.Stderr, ReadFile: os.ReadFile}))
 }
