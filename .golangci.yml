@@ -1,0 +1,28 @@
+version: "2"
+
+# Import-boundary rules (depguard: engine vs adapters) and API bans (forbidigo: exec only in
+# internal/proc, time.Now only in internal/clock) land with the packages they govern, so each rule
+# is tested against a real violation when it's added.
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - nolintlint
+    - unparam
+  settings:
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/stritech-oss/loomlc
