@@ -1,0 +1,8 @@
+{
+  "number": 9,
+  "title": "feat(cli): print the build commit in loomlc version",
+  "body": "The version command should include the commit it was built from.\n\n## Acceptance criteria\n- [ ] `loomlc version` prints the version and commit\n",
+  "url": "https://github.com/acme/widgets/issues/9",
+  "labels": [{ "name": "agent-ready" }, { "name": "tooling" }],
+  "closed": false
+}

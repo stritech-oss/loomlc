@@ -1,0 +1,46 @@
+{
+  "reviews": [
+    {
+      "id": "PRR_change_request",
+      "author": { "login": "maintainer" },
+      "authorAssociation": "OWNER",
+      "state": "CHANGES_REQUESTED",
+      "body": "Rename the flag to --commit; --sha reads like a hash argument.",
+      "submittedAt": "2026-09-16T09:00:00Z"
+    },
+    {
+      "id": "PRR_approval_without_words",
+      "author": { "login": "maintainer" },
+      "authorAssociation": "OWNER",
+      "state": "APPROVED",
+      "body": "",
+      "submittedAt": "2026-09-16T09:10:00Z"
+    }
+  ],
+  "comments": [
+    {
+      "id": "IC_bot",
+      "author": { "login": "dependabot" },
+      "body": "Looks like these dependencies are updatable in another way, so this is no longer needed.",
+      "createdAt": "2026-09-16T09:20:00Z"
+    },
+    {
+      "id": "IC_loomlc_summary",
+      "author": { "login": "maintainer" },
+      "body": "<!-- loomlc:summary run=run-1 -->\nModels: plan claude, engineer claude, qa claude.",
+      "createdAt": "2026-09-16T09:40:00Z"
+    },
+    {
+      "id": "IC_loomlc_reply",
+      "author": { "login": "maintainer" },
+      "body": "<!-- loomlc:feedback-reply run=run-1 -->\nRenamed the flag as asked.",
+      "createdAt": "2026-09-16T09:45:00Z"
+    },
+    {
+      "id": "IC_after_reply",
+      "author": { "login": "reviewer" },
+      "body": "One more thing: mention the flag in the README.",
+      "createdAt": "2026-09-16T10:00:00Z"
+    }
+  ]
+}

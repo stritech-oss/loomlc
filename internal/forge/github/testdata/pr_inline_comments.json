@@ -1,0 +1,20 @@
+[
+  [
+    {
+      "id": 2101,
+      "user": { "login": "maintainer" },
+      "body": "This branch can return early instead of nesting.",
+      "path": "internal/cli/version.go",
+      "line": 42,
+      "created_at": "2026-09-16T09:30:00Z"
+    },
+    {
+      "id": 2102,
+      "user": { "login": "github-actions" },
+      "body": "Coverage decreased by 0.1%.",
+      "path": "internal/cli/version.go",
+      "line": 7,
+      "created_at": "2026-09-16T09:35:00Z"
+    }
+  ]
+]
