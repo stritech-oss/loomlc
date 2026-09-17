@@ -1,0 +1,9 @@
+{
+  "number": 44,
+  "url": "https://github.com/acme/widgets/pull/44",
+  "state": "OPEN",
+  "headRefName": "feat/issue-9-print-build-commit",
+  "baseRefName": "main",
+  "isCrossRepository": false,
+  "labels": [{ "name": "agent-pr" }]
+}

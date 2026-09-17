@@ -1,0 +1,22 @@
+[
+  {
+    "number": 44,
+    "labels": [{ "name": "agent-pr" }, { "name": "agent-revise" }],
+    "isCrossRepository": false
+  },
+  {
+    "number": 31,
+    "labels": [{ "name": "agent-pr" }, { "name": "agent-revise" }, { "name": "agent-revise-in-progress" }],
+    "isCrossRepository": false
+  },
+  {
+    "number": 18,
+    "labels": [{ "name": "agent-revise" }],
+    "isCrossRepository": true
+  },
+  {
+    "number": 52,
+    "labels": [{ "name": "agent-pr" }, { "name": "agent-revise" }],
+    "isCrossRepository": false
+  }
+]

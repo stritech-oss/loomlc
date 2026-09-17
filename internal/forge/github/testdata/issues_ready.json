@@ -1,0 +1,18 @@
+[
+  {
+    "number": 12,
+    "labels": [{ "name": "agent-ready" }, { "name": "enhancement" }]
+  },
+  {
+    "number": 7,
+    "labels": [{ "name": "agent-ready" }, { "name": "agent-in-progress" }]
+  },
+  {
+    "number": 9,
+    "labels": [{ "name": "agent-ready" }]
+  },
+  {
+    "number": 4,
+    "labels": [{ "name": "agent-ready" }, { "name": "agent-failed" }]
+  }
+]

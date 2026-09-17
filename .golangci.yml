@@ -21,11 +21,14 @@ linters:
           files:
             - "**/internal/provider/*/*.go"
             - "**/internal/executor/*/*.go"
+            - "**/internal/forge/*/*.go"
           deny:
             - pkg: github.com/stritech-oss/loomlc/internal/provider/
               desc: adapters don't import provider adapters; share code through internal/provider (docs/conventions.md)
             - pkg: github.com/stritech-oss/loomlc/internal/executor/
               desc: adapters don't import executor adapters; share code through internal/executor (docs/conventions.md)
+            - pkg: github.com/stritech-oss/loomlc/internal/forge/
+              desc: adapters don't import forge adapters; share code through internal/task and internal/sink (docs/conventions.md)
             - pkg: github.com/stritech-oss/loomlc/internal/config
               desc: adapters get their settings from the caller, not from loomlc.yml (docs/conventions.md)
             - pkg: github.com/stritech-oss/loomlc/internal/cli
