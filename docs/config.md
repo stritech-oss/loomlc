@@ -160,3 +160,56 @@ In Phase 0, every lifecycle has exactly three steps, in this order: a plan step,
 | `timeout` | `30m`, `1h`, `30m` | More than 0 and at most `4h`. |
 | `gate` | none | Verdict step only: commands loomlc runs before the step. Any failure fails the iteration. |
 | `allowed_commands` | none | Commands the agent may run, for providers with a permission model. |
+
+## Roles and prompts
+
+A step's prompt has two parts. The **role** is the step's standing instructions, sent as the agent's
+system prompt. The **task prompt** is what loomlc builds for that run: the task's own text, the plan,
+any findings or review feedback, the commits already on the branch, the checks loomlc has run, and the
+protected paths. Only the role is configurable — loomlc builds the task prompt itself, because the
+engine's contract with each step depends on what's in it.
+
+loomlc ships three roles:
+
+| Role | Output | What it does |
+|---|---|---|
+| `planner` | `plan` | Reads the task and the repository, and plans one pull request's worth of work: the slice to build, the files, the tests, what's deferred, and any blockers. Blocked plans stop the run before anything is built. |
+| `engineer` | `change` | Edits files, then describes the commits loomlc should make: a message and paths for new work, or a `fixes` SHA for a fix to a commit already on the branch. It never runs git itself. |
+| `qa` | `verdict` | Reads the change and the results of the checks loomlc already ran, and returns `pass` or `fail` with findings. It verifies; it doesn't edit or commit. |
+
+Every step's answer must match a JSON Schema loomlc gives the provider. An answer that doesn't match,
+or that a model declines to give, fails the step rather than being guessed at.
+
+### Writing your own role
+
+Point `role` at a `.md` file in your repository and say what it produces:
+
+```yaml
+lifecycles:
+  sdlc:
+    steps:
+      - name: qa
+        role: prompts/reviewer.md
+        output: verdict
+```
+
+The path is relative to the repository root and must stay inside it. loomlc reads it from your
+checkout, never from the workspace an agent edits, so a run can't rewrite its own instructions — keep
+the prompt directory in `protected_paths` as well, so a run can't propose changing it either. A custom
+prompt must be under 64 KiB, since providers such as claude pass it as a command-line argument.
+
+Your prompt replaces the role, not the task prompt or the schema. Tell the agent what to judge or
+build; loomlc still tells it what the task is and what its answer has to contain.
+
+### Untrusted text
+
+Task descriptions, review comments, and earlier steps' answers are quoted inside an `<untrusted-text>`
+block, labelled with where they came from. Any spelling of that tag inside the quoted text is escaped,
+so nothing it contains can close the block early and be read as an instruction. An earlier step's
+answer is quoted too: it's a model's words about material loomlc doesn't trust, and it reaches the next
+step with none of loomlc's authority.
+
+This defense lives in the task prompt, which loomlc builds and a configuration can't replace, so a
+custom role can't weaken it. What a custom role can do is fail to reinforce it: the built-in roles tell
+an agent to keep working and report an injection attempt rather than obey it or stop, and a replacement
+that says nothing leaves that to the model.
