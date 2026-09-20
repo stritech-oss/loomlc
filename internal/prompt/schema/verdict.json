@@ -1,0 +1,59 @@
+{
+  "title": "loomlc verdict",
+  "description": "A review step's judgement of the change on the branch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "verdict",
+    "summary",
+    "findings"
+  ],
+  "properties": {
+    "verdict": {
+      "description": "pass when the change is ready for a human reviewer, fail when anything in findings must be fixed first.",
+      "enum": [
+        "pass",
+        "fail"
+      ]
+    },
+    "summary": {
+      "description": "What was verified and how. On a pass this becomes the pull request's QA section.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8000
+    },
+    "findings": {
+      "description": "Every defect the change must fix. Empty on a pass.",
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "detail",
+          "path",
+          "line"
+        ],
+        "properties": {
+          "detail": {
+            "description": "What's wrong and what has to change.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "path": {
+            "description": "The file the finding is in, relative to the repository root. Empty when it isn't about one file. A path, not prose: no newlines or backticks.",
+            "type": "string",
+            "maxLength": 1024,
+            "pattern": "^[^\\n\\r`]*$"
+          },
+          "line": {
+            "description": "The line the finding is on. Zero when it isn't about one line.",
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

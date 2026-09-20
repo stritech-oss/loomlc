@@ -1,0 +1,93 @@
+{
+  "title": "loomlc plan",
+  "description": "A plan for one pull request, produced by the planning step.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "pr_title",
+    "summary",
+    "files",
+    "tests",
+    "deferred",
+    "blockers"
+  ],
+  "properties": {
+    "status": {
+      "description": "ready to implement, or blocked with the reasons in blockers.",
+      "enum": [
+        "ready",
+        "blocked"
+      ]
+    },
+    "pr_title": {
+      "description": "Conventional Commit header for the whole slice: imperative, no trailing period.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 72
+    },
+    "summary": {
+      "description": "What this slice delivers and why it's shaped this way.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8000
+    },
+    "files": {
+      "description": "The files to add or change, each with what it needs.",
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "change"
+        ],
+        "properties": {
+          "path": {
+            "description": "The file, relative to the repository root.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "change": {
+            "description": "What this file needs: what to add, change, or remove, and why.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        }
+      }
+    },
+    "tests": {
+      "description": "The cases that must pass for this slice to be done.",
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+      }
+    },
+    "deferred": {
+      "description": "Work deliberately left out of this slice, each item a task someone could pick up.",
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+      }
+    },
+    "blockers": {
+      "description": "What stops the work, when status is blocked. Empty otherwise.",
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+      }
+    }
+  }
+}
