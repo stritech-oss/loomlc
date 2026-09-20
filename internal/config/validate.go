@@ -280,22 +280,22 @@ func validateShape(p *problems, at string, lc Lifecycle) {
 // task, and never the base branch.
 func validateBranchTemplate(p *problems, at, tmpl, base string) {
 	if tmpl == "" {
-		p.add(at, "is required, for example %q", "feat/issue-{{.Number}}-{{.Slug}}")
+		p.add(at, "is required, for example %q", "feat/issue-{{.ID}}-{{.Slug}}")
 		return
 	}
-	first, err := renderBranch(tmpl, 1, "first-task")
+	first, err := renderBranch(tmpl, "1", "first-task")
 	if err != nil {
 		p.add(at, "%v", err)
 		return
 	}
-	second, err := renderBranch(tmpl, 2, "second-task")
+	second, err := renderBranch(tmpl, "2", "second-task")
 	if err != nil {
 		p.add(at, "%v", err)
 		return
 	}
 	switch {
 	case first == second:
-		p.add(at, "must use {{.Number}}, so each task gets its own branch")
+		p.add(at, "must use {{.ID}}, so each task gets its own branch")
 	case branchProblem(first) != "":
 		p.add(at, "renders %q: %s", first, branchProblem(first))
 	case first == base || second == base:
@@ -305,18 +305,18 @@ func validateBranchTemplate(p *problems, at, tmpl, base string) {
 
 // branchData is what a branch template can refer to.
 type branchData struct {
-	Number int    // the task number
-	Slug   string // the task title in lowercase, with other characters replaced by hyphens
+	ID   string // the task's id in its source, such as a GitHub issue number
+	Slug string // the task title in lowercase, with other characters replaced by hyphens
 }
 
-func renderBranch(tmpl string, number int, slug string) (string, error) {
+func renderBranch(tmpl string, id, slug string) (string, error) {
 	t, err := template.New("branch").Option("missingkey=error").Parse(tmpl)
 	if err != nil {
 		return "", fmt.Errorf("invalid template: %w", err)
 	}
 	var b strings.Builder
-	if err := t.Execute(&b, branchData{Number: number, Slug: slug}); err != nil {
-		return "", fmt.Errorf("can't render: %w; use {{.Number}} and {{.Slug}}", err)
+	if err := t.Execute(&b, branchData{ID: id, Slug: slug}); err != nil {
+		return "", fmt.Errorf("can't render: %w; use {{.ID}} and {{.Slug}}", err)
 	}
 	return b.String(), nil
 }

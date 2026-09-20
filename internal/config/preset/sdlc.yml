@@ -50,7 +50,7 @@ lifecycles:
     concurrency: 3
     max_open_outputs: 5
     watch_interval: 5m
-    branch: "feat/issue-{{.Number}}-{{.Slug}}"
+    branch: "feat/issue-{{.ID}}-{{.Slug}}"
     protected_paths: [loomlc.yml, prompts]
     steps:
       - name: plan

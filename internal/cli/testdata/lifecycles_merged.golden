@@ -5,7 +5,7 @@ sdlc
   source    github (github, picks up label agent-ready)
   sink      github-pr (github-pr into main, label agent-pr)
   limits    1 at a time, pause at 5 open outputs, watch every 5m
-  branch    feat/issue-{{.Number}}-{{.Slug}}
+  branch    feat/issue-{{.ID}}-{{.Slug}}
 
   STEP      PROVIDER  MODEL                ROLE      OUTPUT   ACCESS       LOOP            TIMEOUT
   plan      pi        google/gemini-3-pro  planner   plan     read-only    -               30m
