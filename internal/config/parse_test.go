@@ -53,7 +53,7 @@ func TestParseResolvesThePreset(t *testing.T) {
 		{"concurrency", sdlc.Concurrency, 3},
 		{"max open outputs", sdlc.MaxOpenOutputs, 5},
 		{"watch interval", time.Duration(sdlc.WatchInterval), 5 * time.Minute},
-		{"branch", sdlc.Branch, "feat/issue-{{.Number}}-{{.Slug}}"},
+		{"branch", sdlc.Branch, "feat/issue-{{.ID}}-{{.Slug}}"},
 		{"steps", stepNames(sdlc), []string{"plan", "engineer", "qa"}},
 		{"plan output", sdlc.Steps[0].Output, OutputPlan},
 		{"engineer output", sdlc.Steps[1].Output, OutputChange},
