@@ -40,7 +40,11 @@ claude -p --output-format json
 ```
 
 - **The task prompt goes on stdin.** Task text is untrusted, so it never appears in arguments, where it
-  would show up in the process list.
+  would show up in the process list. Two short pieces of generated text do reach a command line, because
+  the tools have no other way to take them: the role prompt and output schema loomlc itself wrote, and —
+  in the GitHub sink — the pull request title an agent chose, which `gh` only accepts as `--title`. A
+  local user can see those in the process list while the command runs; loomlc's error messages leave
+  their contents out.
 - **Role instructions** are appended to Claude Code's system prompt, which keeps its coding defaults and
   its `CLAUDE.md` loading. `--bare` isn't used, because it only supports API-key authentication.
 - **Permissions.** `--permission-prompts none` denies anything that would ask for approval, so the rules
