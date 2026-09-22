@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"slices"
@@ -22,19 +23,42 @@ func runLifecycles(args []string, env Env) int {
 	configPath := flags.String("config", "", "read the configuration from `path` instead of ./"+defaultConfigFile)
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return ExitOK
+			// Help that was asked for goes to stdout, where it can be piped or paged.
+			return printUsage(env.Stdout, flags)
 		}
 		return ExitUsage
 	}
 	if flags.NArg() > 0 {
 		return fail(env.Stderr, fmt.Sprintf("loomlc lifecycles: unexpected arguments %q\n", flags.Args()))
 	}
+	if err := checkConfigFlag(flags); err != nil {
+		return fail(env.Stderr, fmt.Sprintf("loomlc lifecycles: %v\n", err))
+	}
 
 	cfg, origin, err := loadConfig(env, *configPath)
 	if err != nil {
-		return fail(env.Stderr, fmt.Sprintf("loomlc lifecycles: %v\n", err))
+		return failure(env.Stderr, fmt.Sprintf("loomlc lifecycles: %v\n", err))
 	}
 	return print(env.Stdout, describeLifecycles(cfg, origin))
+}
+
+// printUsage writes a flagset's help to w, since flag writes it wherever parse errors go.
+func printUsage(w io.Writer, flags *flag.FlagSet) int {
+	flags.SetOutput(w)
+	flags.Usage()
+	return ExitOK
+}
+
+// checkConfigFlag rejects an empty --config. Treating it as "not given" would silently read
+// ./loomlc.yml instead of the file the operator meant to name.
+func checkConfigFlag(flags *flag.FlagSet) error {
+	var err error
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "config" && f.Value.String() == "" {
+			err = errors.New("--config needs a path")
+		}
+	})
+	return err
 }
 
 // loadConfig reads the configuration at path, or ./loomlc.yml when path is empty, and describes where it

@@ -72,7 +72,15 @@ func print(w io.Writer, msg string) int {
 	return ExitOK
 }
 
+// fail reports a command that was invoked wrongly: the operator has to change what they typed.
 func fail(w io.Writer, msg string) int {
 	_, _ = io.WriteString(w, msg) // best effort: the exit code already reports the failure
 	return ExitUsage
+}
+
+// failure reports a command that was invoked correctly but couldn't do its job, such as a configuration
+// that doesn't load. A script can tell the two apart by the exit code.
+func failure(w io.Writer, msg string) int {
+	_, _ = io.WriteString(w, msg)
+	return ExitFailure
 }
