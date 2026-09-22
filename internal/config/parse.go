@@ -62,6 +62,12 @@ func decodeDocument(name string, data []byte) (*yaml.Node, error) {
 		return nil, fmt.Errorf("parse %s: %w", name, err)
 	}
 
+	// Only the first document is read, so a second one would be dropped along with any mistake in it.
+	var rest Config
+	if err := dec.Decode(&rest); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("parse %s: loomlc reads one configuration; remove the second YAML document after \"---\"", name)
+	}
+
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", name, err)

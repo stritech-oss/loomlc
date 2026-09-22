@@ -191,6 +191,9 @@ func TestParseRejectsMalformedFiles(t *testing.T) {
 		{name: "unknown key", yaml: "lifecycles:\n  sdlc:\n    concurency: 2\n", wantErr: []string{"parse loomlc.yml", "line 3", "concurency"}},
 		{name: "top level is a list", yaml: "- sdlc\n", wantErr: []string{"parse loomlc.yml"}},
 		{name: "bad duration", yaml: "lifecycles:\n  sdlc:\n    watch_interval: soon\n", wantErr: []string{`invalid duration "soon"`}},
+		// Only the first document is read, so a second one would be dropped whole — settings, mistakes
+		// and all — while the file still looked accepted.
+		{name: "second document", yaml: "version: 1\n---\nlifecycles:\n  sdlc:\n    concurrency: 9\n", wantErr: []string{"loomlc reads one configuration", "second YAML document"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
