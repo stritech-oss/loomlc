@@ -105,6 +105,15 @@ func validateExecutor(p *problems, name string, e Executor) {
 		p.add(at+".type", "unknown executor type %q; use worktree", e.Type)
 	}
 	checkRelativePath(p, at+".root", e.Root, true)
+	// The executor force-removes what it finds under root, so root must be a directory of its own.
+	// "." would make every top-level directory in the checkout look like one of its workspaces.
+	switch clean := path.Clean(filepath.ToSlash(e.Root)); {
+	case e.Root == "":
+	case clean == ".":
+		p.add(at+".root", "must be a directory of its own, not the repository itself")
+	case clean == ".git" || strings.HasPrefix(clean, ".git/"):
+		p.add(at+".root", "must not be inside .git")
+	}
 	if e.Remote == "" {
 		p.add(at+".remote", "is required, for example origin")
 	}
@@ -293,9 +302,16 @@ func validateBranchTemplate(p *problems, at, tmpl, base string) {
 		p.add(at, "%v", err)
 		return
 	}
+	// Vary the id alone: two tasks can share a title, so a template keyed on {{.Slug}} would put them
+	// on one branch, and comparing two fully different renders would never notice.
+	sameSlug, err := renderBranch(tmpl, "2", "first-task")
+	if err != nil {
+		p.add(at, "%v", err)
+		return
+	}
 	switch {
-	case first == second:
-		p.add(at, "must use {{.ID}}, so each task gets its own branch")
+	case first == sameSlug:
+		p.add(at, "must use {{.ID}}, so two tasks with the same title get different branches")
 	case branchProblem(first) != "":
 		p.add(at, "renders %q: %s", first, branchProblem(first))
 	case first == base || second == base:
@@ -321,6 +337,17 @@ func renderBranch(tmpl string, id, slug string) (string, error) {
 	return b.String(), nil
 }
 
+// badRefComponent reports whether any of name's slash-separated parts is one git refuses: it rejects a
+// component starting with a dot or ending in .lock, not only the whole name.
+func badRefComponent(name string) bool {
+	for part := range strings.SplitSeq(name, "/") {
+		if strings.HasPrefix(part, ".") || strings.HasSuffix(part, ".lock") {
+			return true
+		}
+	}
+	return false
+}
+
 // branchProblem explains why name isn't a usable git branch name, or returns "".
 func branchProblem(name string) string {
 	switch {
@@ -332,7 +359,10 @@ func branchProblem(name string) string {
 		strings.Contains(name, "@{"),
 		strings.Contains(name, "//"),
 		strings.HasPrefix(name, "/"), strings.HasPrefix(name, "-"),
-		strings.HasSuffix(name, "/"), strings.HasSuffix(name, "."), strings.HasSuffix(name, ".lock"):
+		strings.HasSuffix(name, "/"), strings.HasSuffix(name, "."), strings.HasSuffix(name, ".lock"),
+		// git rejects these per path component, not just at the ends, and the executor runs
+		// check-ref-format for real once a run starts. Catching it here keeps that out of run time.
+		badRefComponent(name):
 		return fmt.Sprintf("%q isn't a valid git branch name", name)
 	default:
 		return ""

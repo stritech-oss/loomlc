@@ -110,7 +110,7 @@ type Lifecycle struct {
 	// MaxOpenOutputs pauses new pickups while this many outputs, such as pull requests, await review.
 	MaxOpenOutputs int      `yaml:"max_open_outputs"`
 	WatchInterval  Duration `yaml:"watch_interval"`
-	// Branch is a text/template for a task's branch name, with {{.Number}} and {{.Slug}}.
+	// Branch is a text/template for a task's branch name, with {{.ID}} and {{.Slug}}.
 	Branch string `yaml:"branch"`
 	// ProtectedPaths are paths a run may not change without a human.
 	ProtectedPaths []string          `yaml:"protected_paths"`
