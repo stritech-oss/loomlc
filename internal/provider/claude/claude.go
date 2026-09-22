@@ -11,9 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/stritech-oss/loomlc/internal/proc"
 	"github.com/stritech-oss/loomlc/internal/provider"
@@ -30,6 +32,8 @@ const (
 	killGrace = 15 * time.Second
 	// maxArg keeps each argument below Linux's 128 KiB per-argument limit.
 	maxArg = 100 << 10
+	// maxTranscriptLine bounds how much of a line the transcript holds back waiting for its newline.
+	maxTranscriptLine = 1 << 20
 )
 
 // Capabilities returns what the claude adapter supports.
@@ -103,8 +107,16 @@ func (p *Provider) Run(ctx context.Context, req provider.Request) (provider.Resu
 	var stdout, stderr bytes.Buffer
 	outW, errW := io.Writer(&stdout), io.Writer(&stderr)
 	if req.Transcript != nil {
+		// Each stream gets its own line buffer over the shared transcript. Writing both straight
+		// through would interleave them mid-line, which splits a secret in two and defeats the
+		// redaction the caller is required to wrap the transcript in.
 		transcript := &lockedWriter{w: req.Transcript}
-		outW, errW = io.MultiWriter(&stdout, transcript), io.MultiWriter(&stderr, transcript)
+		outLines, errLines := newLineWriter(transcript), newLineWriter(transcript)
+		defer func() {
+			_ = outLines.Close()
+			_ = errLines.Close()
+		}()
+		outW, errW = io.MultiWriter(&stdout, outLines), io.MultiWriter(&stderr, errLines)
 	}
 
 	res, runErr := p.runner.Run(ctx, proc.Cmd{
@@ -118,10 +130,12 @@ func (p *Provider) Run(ctx context.Context, req provider.Request) (provider.Resu
 		KillGrace: killGrace,
 	})
 	switch {
+	// A run that timed out or was canceled is the one an operator most needs to diagnose, so whatever
+	// claude managed to say goes into the message rather than being dropped.
 	case errors.Is(runErr, context.DeadlineExceeded):
-		return provider.Result{}, fail(provider.Timeout, res.ExitCode, "", runErr)
+		return provider.Result{}, fail(provider.Timeout, res.ExitCode, lastWords(stderr.String(), stdout.String()), runErr)
 	case errors.Is(runErr, context.Canceled):
-		return provider.Result{}, fail(provider.Canceled, res.ExitCode, "", runErr)
+		return provider.Result{}, fail(provider.Canceled, res.ExitCode, lastWords(stderr.String(), stdout.String()), runErr)
 	case runErr != nil && !errors.Is(runErr, proc.ErrOutputLeftOpen):
 		// With ErrOutputLeftOpen, claude finished and a tool it started kept stdout open; the result it
 		// printed first is still readable, so it's parsed below.
@@ -147,7 +161,7 @@ func parse(req provider.Request, exitCode int, stdout []byte, stderr string, fai
 		if exitCode != 0 {
 			return provider.Result{}, fail(provider.Failed, exitCode, firstNonEmpty(stderr, string(stdout)), nil)
 		}
-		return provider.Result{}, fail(provider.BadOutput, exitCode, "claude didn't print its JSON result: "+string(stdout), err)
+		return provider.Result{}, fail(provider.BadOutput, exitCode, "claude didn't print its JSON result: "+provider.Tail(string(stdout)), err)
 	}
 	// A failed run can still report subtype "success"; is_error and the exit code are what count.
 	if out.IsError || exitCode != 0 {
@@ -158,7 +172,7 @@ func parse(req provider.Request, exitCode int, stdout []byte, stderr string, fai
 	if req.OutputSchema != nil {
 		structured, ok := structuredAnswer(out)
 		if !ok {
-			return provider.Result{}, fail(provider.BadOutput, exitCode, "the answer has no JSON matching the output schema: "+out.Result, nil)
+			return provider.Result{}, fail(provider.BadOutput, exitCode, "the answer has no JSON matching the output schema: "+provider.Tail(out.Result), nil)
 		}
 		result.Structured = structured
 	}
@@ -193,10 +207,18 @@ func buildArgs(req provider.Request, writeMode string) ([]string, error) {
 	if req.Vendor != "" {
 		return nil, fmt.Errorf("claude chooses its own vendor, so a step can't set vendor %q", req.Vendor)
 	}
-	for name, value := range map[string]string{"role prompt": req.RolePrompt, "output schema": string(req.OutputSchema)} {
-		if len(value) > maxArg {
-			return nil, fmt.Errorf("the %s is %d bytes; claude takes it as an argument, which is limited to %d", name, len(value), maxArg)
+	// Ordered, so a request that is oversized in two places always names the same one.
+	for _, arg := range []struct{ name, value string }{
+		{"role prompt", req.RolePrompt},
+		{"output schema", string(req.OutputSchema)},
+		{"session id", req.ResumeSession},
+	} {
+		if len(arg.value) > maxArg {
+			return nil, fmt.Errorf("the %s is %d bytes; claude takes it as an argument, which is limited to %d", arg.name, len(arg.value), maxArg)
 		}
+	}
+	if req.ResumeSession != "" && !sessionID.MatchString(req.ResumeSession) {
+		return nil, fmt.Errorf("session id %q isn't one claude printed; loomlc won't put it on a command line", req.ResumeSession)
 	}
 
 	allowed := []string{"Bash(git log *)", "Bash(git diff *)", "Bash(git show *)", "Bash(git status *)"}
@@ -252,15 +274,77 @@ func bashRule(argv []string) (string, error) {
 		return "", errors.New("an allowed command can't be empty")
 	case strings.ContainsAny(joined, ",()"):
 		return "", fmt.Errorf("allowed command %q can't contain commas or parentheses, because claude reads its tool rules as a comma-separated list", joined)
-	default:
-		return "Bash(" + joined + " *)", nil
 	}
+	// A claude rule matches the command as typed, not as an argument vector, so an argument that is
+	// empty or carries a space doesn't mean here what it meant in the configuration: the rule would
+	// allow something other than what the operator wrote, quietly.
+	for i, arg := range argv {
+		if arg == "" {
+			return "", fmt.Errorf("allowed command %q has an empty argument at position %d", joined, i+1)
+		}
+		if strings.ContainsFunc(arg, unicode.IsSpace) {
+			return "", fmt.Errorf("allowed command %q has an argument with a space in it (%q); claude matches the command as typed, so it can't tell that apart from two arguments", joined, arg)
+		}
+	}
+	return "Bash(" + joined + " *)", nil
 }
+
+// sessionID is the shape claude prints for a session: a UUID. It's parsed from claude's own output, and
+// it goes back on the command line for --resume, so it's checked rather than trusted.
+var sessionID = regexp.MustCompile(`^[0-9a-fA-F-]{8,64}$`)
 
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {
 		if strings.TrimSpace(v) != "" {
 			return v
+		}
+	}
+	return ""
+}
+
+// lineWriter buffers writes until a newline, so what reaches the transcript is whole lines. Without it
+// the two streams interleave mid-line, and a line-based redactor can't mask a secret it only sees half
+// of. A line with no end is written when the writer is closed.
+type lineWriter struct {
+	w   io.Writer
+	buf []byte
+}
+
+func newLineWriter(w io.Writer) *lineWriter { return &lineWriter{w: w} }
+
+func (lw *lineWriter) Write(p []byte) (int, error) {
+	lw.buf = append(lw.buf, p...)
+	for {
+		end := bytes.IndexByte(lw.buf, '\n') + 1
+		if end == 0 {
+			if len(lw.buf) < maxTranscriptLine {
+				return len(p), nil
+			}
+			end = len(lw.buf) // a line longer than any claude writes; pass it on rather than grow
+		}
+		if _, err := lw.w.Write(lw.buf[:end]); err != nil {
+			return 0, err
+		}
+		lw.buf = lw.buf[end:]
+	}
+}
+
+// Close writes a trailing line that never ended. It doesn't close the writer underneath.
+func (lw *lineWriter) Close() error {
+	if len(lw.buf) == 0 {
+		return nil
+	}
+	_, err := lw.w.Write(append(lw.buf, '\n'))
+	lw.buf = nil
+	return err
+}
+
+// lastWords returns the first of parts that has anything in it, bounded, for a failure message. claude
+// says why it stopped on stderr when it can, and prints its result on stdout when it can't.
+func lastWords(parts ...string) string {
+	for _, part := range parts {
+		if strings.TrimSpace(part) != "" {
+			return provider.Tail(part)
 		}
 	}
 	return ""
