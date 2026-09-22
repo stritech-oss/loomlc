@@ -15,6 +15,7 @@ import (
 	"github.com/stritech-oss/loomlc/internal/proc"
 	"github.com/stritech-oss/loomlc/internal/proc/proctest"
 	"github.com/stritech-oss/loomlc/internal/provider"
+	"github.com/stritech-oss/loomlc/internal/redact"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files in testdata")
@@ -107,6 +108,13 @@ func TestBuildArgsRejectsRequestsClaudeCantExpress(t *testing.T) {
 		{name: "empty allowed command", req: provider.Request{Access: provider.ReadOnly, AllowedCommands: [][]string{{}}}, wantErr: "can't be empty"},
 		{name: "unknown access", req: provider.Request{}, wantErr: "unknown access"},
 		{name: "oversized role prompt", req: provider.Request{Access: provider.ReadOnly, RolePrompt: strings.Repeat("x", maxArg+1)}, wantErr: "limited to"},
+		// A rule matches the command as claude sees it typed, so an empty argument or one with a space
+		// would allow something other than the argument vector the operator configured.
+		{name: "empty argument in an allowed command", req: provider.Request{Access: provider.ReadOnly, AllowedCommands: [][]string{{"go", "", "test"}}}, wantErr: "empty argument at position 2"},
+		{name: "space inside an allowed command's argument", req: provider.Request{Access: provider.ReadOnly, AllowedCommands: [][]string{{"grep", "foo bar"}}}, wantErr: "argument with a space"},
+		// The session id comes from claude's own output and goes back on the command line.
+		{name: "session id that claude didn't print", req: provider.Request{Access: provider.ReadOnly, ResumeSession: "--dangerously-skip-permissions"}, wantErr: "isn't one claude printed"},
+		{name: "oversized session id", req: provider.Request{Access: provider.ReadOnly, ResumeSession: strings.Repeat("a", maxArg+1)}, wantErr: "limited to"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -275,6 +283,42 @@ func TestRunSendsThePromptOnStdin(t *testing.T) {
 	}
 	if !strings.Contains(transcript.String(), `"result":"pong"`) {
 		t.Errorf("transcript = %q, want claude's raw output", transcript.String())
+	}
+}
+
+// The transcript is what a caller wraps in a redactor, and redaction works a line at a time. stdout and
+// stderr are written concurrently, so without line buffering a stderr chunk lands inside a stdout line
+// and splits whatever was there — including a secret — into two halves that no longer match.
+func TestRunKeepsTranscriptLinesWhole(t *testing.T) {
+	const secret = "ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	var out bytes.Buffer
+	transcript := redact.New(secret).Writer(&out)
+
+	// The fake writes stdout and stderr in turn; the secret spans two stdout writes with a stderr write
+	// in between, which is exactly the interleaving that used to break masking.
+	var fake proctest.Fake
+	fake.SetPath("claude", claudePath)
+	fake.On(proctest.Response{
+		Stdout: `{"is_error":false,"result":"log: token=` + secret + `","session_id":"s","total_cost_usd":0}`,
+		Stderr: "warning: slow tool call\n",
+	}, claudePath)
+
+	req := provider.Request{Step: "plan", Access: provider.ReadOnly, Transcript: transcript}
+	if _, err := New(Options{}, &fake).Run(context.Background(), req); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if err := transcript.Close(); err != nil {
+		t.Fatalf("close transcript: %v", err)
+	}
+
+	if strings.Contains(out.String(), secret) {
+		t.Errorf("the secret reached the redacted transcript in full:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), redact.Mask) {
+		t.Errorf("transcript = %q, want the secret masked", out.String())
+	}
+	if !strings.Contains(out.String(), "warning: slow tool call") {
+		t.Errorf("transcript = %q, want claude's stderr as well", out.String())
 	}
 }
 

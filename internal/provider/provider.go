@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // MaxMessage bounds Error.Message, so a CLI that prints megabytes doesn't flood logs and comments.
@@ -149,13 +150,19 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() error { return e.Err }
 
-// Tail returns s without surrounding whitespace, cut to its last MaxMessage bytes.
+// Tail returns s without surrounding whitespace, cut to its last MaxMessage bytes. The cut lands on a
+// character boundary: a message with a character sliced in half is invalid UTF-8, and JSON encoding
+// would replace the pieces before an operator ever read it.
 func Tail(s string) string {
 	s = strings.TrimSpace(s)
 	if len(s) <= MaxMessage {
 		return s
 	}
-	return "…" + s[len(s)-MaxMessage:]
+	cut := len(s) - MaxMessage
+	for cut < len(s) && !utf8.RuneStart(s[cut]) {
+		cut++
+	}
+	return "…" + s[cut:]
 }
 
 var fencedJSON = regexp.MustCompile("(?is)```json[ \\t]*\\r?\\n(.*?)\\r?\\n[ \\t]*```")
