@@ -1,5 +1,5 @@
-// Package proc runs external commands by argument vector, with an explicit environment and
-// cancellation that stops every process the command started.
+// Package proc runs external commands by argument vector, with an explicit environment. Every process
+// the command started is stopped when it ends, whether it was canceled or exited on its own.
 //
 // It is the only package in loomlc that imports os/exec (docs/conventions.md). Everything else runs
 // commands through Runner, which tests replace with proctest.Fake.
@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"time"
 )
@@ -73,7 +74,7 @@ func (Exec) Run(ctx context.Context, c Cmd) (Result, error) {
 		return Result{}, errors.New("run command: empty command name")
 	}
 	if err := ctx.Err(); err != nil {
-		return Result{}, fmt.Errorf("run %s: %w", c.Name, err)
+		return Result{ExitCode: -1}, fmt.Errorf("run %s: %w", c.Name, err)
 	}
 
 	grace := c.KillGrace
@@ -94,7 +95,7 @@ func (Exec) Run(ctx context.Context, c Cmd) (Result, error) {
 	startInOwnGroup(cmd)
 
 	if err := cmd.Start(); err != nil {
-		return Result{}, fmt.Errorf("start %s: %w", c.Name, err)
+		return Result{ExitCode: -1}, fmt.Errorf("start %s: %w", c.Name, err)
 	}
 
 	done := make(chan error, 1)
@@ -102,8 +103,21 @@ func (Exec) Run(ctx context.Context, c Cmd) (Result, error) {
 
 	select {
 	case err := <-done:
+		// The command is finished, but anything it started in the background isn't. Leaving those
+		// running would outlive the run that asked for them, so the group goes with the command.
+		cleanUpGroup(cmd.Process, grace)
 		return finish(c.Name, cmd, err)
 	case <-ctx.Done():
+	}
+
+	// The command may have exited in the same instant the context ended. Signalling a group whose
+	// leader has already been reaped can reach an unrelated group once the id is reused.
+	select {
+	case err := <-done:
+		cleanUpGroup(cmd.Process, grace)
+		res, _ := finish(c.Name, cmd, err)
+		return res, fmt.Errorf("run %s: %w", c.Name, ctx.Err())
+	default:
 	}
 
 	terminateGroup(cmd.Process)
@@ -115,10 +129,37 @@ func (Exec) Run(ctx context.Context, c Cmd) (Result, error) {
 	case waitErr = <-done:
 	case <-timer.C:
 		killGroup(cmd.Process)
-		waitErr = <-done
+		// A process that can't be killed — stuck in uninterruptible I/O on a dead mount, say — must
+		// not hang the run as well. Give up after the same grace and say so.
+		giveUp := time.NewTimer(grace)
+		defer giveUp.Stop()
+		select {
+		case waitErr = <-done:
+		case <-giveUp.C:
+			return Result{ExitCode: -1}, fmt.Errorf("run %s: %w; it didn't exit after SIGKILL", c.Name, ctx.Err())
+		}
 	}
+	cleanUpGroup(cmd.Process, grace)
 	res, _ := finish(c.Name, cmd, waitErr) // the context error explains the outcome better than a wait error
 	return res, fmt.Errorf("run %s: %w", c.Name, ctx.Err())
+}
+
+// cleanUpGroup stops anything the command left running in its process group. Nothing is left alive in
+// the common case, so this costs a single signal that reports "no such group".
+func cleanUpGroup(p *os.Process, grace time.Duration) {
+	if p == nil || !groupAlive(p) {
+		return
+	}
+	terminateGroup(p)
+
+	const poll = 20 * time.Millisecond
+	for waited := time.Duration(0); waited < grace; waited += poll {
+		if !groupAlive(p) {
+			return
+		}
+		time.Sleep(poll)
+	}
+	killGroup(p)
 }
 
 // LookPath implements Runner. It searches loomlc's own PATH, the same way Run resolves Cmd.Name.
