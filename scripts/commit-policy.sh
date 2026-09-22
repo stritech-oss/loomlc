@@ -26,10 +26,17 @@ bot_ident_re='\[bot\]|<noreply@anthropic\.com>|<noreply@openai\.com>|<[0-9]+\+co
 # Agent attribution banned from commit messages and PR bodies, matched case-insensitively per line.
 banned_res=(
   '^[[:space:]]*co-authored-by:'
-  '^[[:space:]]*[a-z0-9-]+-session:'
-  'generated (with|by) .*(claude|codex|gemini|antigravity|copilot|cursor|devin|jules|aider|opencode|goose|crush|pi\.dev)'
-  'claude\.ai/(code|chat|share)/'
-  'chatgpt\.com/(codex|c|share|g)/'
+  '^[[:space:]]*assisted-by:'
+  # Any trailer naming a session, thread, conversation or chat: Claude-Session:, Codex-Thread-Id:, and
+  # whatever the next agent calls the same thing.
+  '^[[:space:]]*[a-z0-9-]*(session|thread|conversation|chat)[a-z0-9-]*:'
+  # An attribution footer, not prose. loomlc's own docs discuss agents generating things constantly, so
+  # this matches only a line that starts with the claim, or the robot emoji those footers carry.
+  '^[[:space:]]*(🤖[[:space:]]*)?generated[ -](with|by|using)[[:space:]]'
+  '^[[:space:]]*🤖'
+  '^[[:space:]]*generated-(with|by|using):'
+  'claude\.ai/(code|chat|share)([/)>[:space:]]|$)'
+  'chatgpt\.com/(codex|c|share|g)([/)>[:space:]]|$)'
   'chat\.openai\.com/'
   'gemini\.google\.com/(app|share)'
   'g\.co/gemini/share'
@@ -88,9 +95,7 @@ check_message() { # <message-file> <author "Name <email>"> <context> <ci: 0|1>
       [ "$ci" = 0 ] || err "$ctx: squash autosquash commits before merging: \"$header\""
       return
       ;;
-    'Merge '*)
-      return # git-generated; CI skips merge commits as well
-      ;;
+    'Merge '*) ;; # git-generated header, but still needs a sign-off
     'Revert "'*) ;; # git-generated header, but still needs a sign-off
     *)
       grep -Eq -- "^($types)(\([a-z0-9][a-z0-9._/-]*\))?!?: [^ ]" <<<"$header" ||
