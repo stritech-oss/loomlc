@@ -19,17 +19,20 @@ func runProviders(args []string, env Env) int {
 	configPath := flags.String("config", "", "read the configuration from `path` instead of ./"+defaultConfigFile)
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return ExitOK
+			return printUsage(env.Stdout, flags)
 		}
 		return ExitUsage
 	}
 	if flags.NArg() > 0 {
 		return fail(env.Stderr, fmt.Sprintf("loomlc providers: unexpected arguments %q\n", flags.Args()))
 	}
+	if err := checkConfigFlag(flags); err != nil {
+		return fail(env.Stderr, fmt.Sprintf("loomlc providers: %v\n", err))
+	}
 
 	cfg, origin, err := loadConfig(env, *configPath)
 	if err != nil {
-		return fail(env.Stderr, fmt.Sprintf("loomlc providers: %v\n", err))
+		return failure(env.Stderr, fmt.Sprintf("loomlc providers: %v\n", err))
 	}
 	return print(env.Stdout, describeProviders(cfg, origin, env.LookPath))
 }

@@ -64,8 +64,8 @@ func TestProvidersPrintsInstallStateAndCapabilities(t *testing.T) {
 
 func TestProvidersReportsConfigErrors(t *testing.T) {
 	got := run([]string{"providers", "--config", "missing.yml"}, nil)
-	if got.code != ExitUsage || !strings.Contains(got.stderr, "loomlc providers: read configuration") {
-		t.Errorf("exit code = %d, stderr = %q; want %d and a read error", got.code, got.stderr, ExitUsage)
+	if got.code != ExitFailure || !strings.Contains(got.stderr, "loomlc providers: read configuration") {
+		t.Errorf("exit code = %d, stderr = %q; want %d and a read error", got.code, got.stderr, ExitFailure)
 	}
 }
 
@@ -162,23 +162,28 @@ func TestLifecyclesReadsTheConfigFlag(t *testing.T) {
 	}
 }
 
+// A command that was typed wrongly exits 2; one that was typed correctly but couldn't do its job exits
+// 1, so a script can tell "fix your command" from "fix your configuration".
 func TestLifecyclesReportsConfigErrors(t *testing.T) {
 	tests := []struct {
 		name       string
 		args       []string
 		files      map[string]string
+		wantCode   int
 		wantStderr string
 	}{
-		{name: "missing --config file", args: []string{"lifecycles", "--config", "nope.yml"}, wantStderr: "read configuration: open nope.yml"},
-		{name: "invalid configuration", args: []string{"lifecycles"}, files: map[string]string{"loomlc.yml": "lifecycles:\n  sdlc:\n    concurrency: 0\n"}, wantStderr: "lifecycles.sdlc.concurrency: must be at least 1"},
-		{name: "unexpected argument", args: []string{"lifecycles", "sdlc"}, wantStderr: `unexpected arguments ["sdlc"]`},
-		{name: "unknown flag", args: []string{"lifecycles", "--verbose"}, wantStderr: "flag provided but not defined: -verbose"},
+		{name: "missing --config file", args: []string{"lifecycles", "--config", "nope.yml"}, wantCode: ExitFailure, wantStderr: "read configuration: open nope.yml"},
+		{name: "invalid configuration", args: []string{"lifecycles"}, files: map[string]string{"loomlc.yml": "lifecycles:\n  sdlc:\n    concurrency: 0\n"}, wantCode: ExitFailure, wantStderr: "lifecycles.sdlc.concurrency: must be at least 1"},
+		{name: "unexpected argument", args: []string{"lifecycles", "sdlc"}, wantCode: ExitUsage, wantStderr: `unexpected arguments ["sdlc"]`},
+		{name: "unknown flag", args: []string{"lifecycles", "--verbose"}, wantCode: ExitUsage, wantStderr: "flag provided but not defined: -verbose"},
+		{name: "empty --config", args: []string{"lifecycles", "--config="}, wantCode: ExitUsage, wantStderr: "--config needs a path"},
+		{name: "empty --config for providers", args: []string{"providers", "--config="}, wantCode: ExitUsage, wantStderr: "--config needs a path"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := run(tt.args, tt.files)
-			if got.code != ExitUsage {
-				t.Errorf("exit code = %d, want %d", got.code, ExitUsage)
+			if got.code != tt.wantCode {
+				t.Errorf("exit code = %d, want %d", got.code, tt.wantCode)
 			}
 			if got.stdout != "" {
 				t.Errorf("stdout = %q, want empty", got.stdout)
@@ -190,12 +195,27 @@ func TestLifecyclesReportsConfigErrors(t *testing.T) {
 	}
 }
 
+// Help that was asked for goes to stdout, so `loomlc lifecycles --help | less` shows something.
+func TestSubcommandHelpGoesToStdout(t *testing.T) {
+	for _, cmd := range []string{"lifecycles", "providers"} {
+		t.Run(cmd, func(t *testing.T) {
+			got := run([]string{cmd, "--help"}, nil)
+			if got.code != ExitOK {
+				t.Errorf("exit code = %d, want %d", got.code, ExitOK)
+			}
+			if !strings.Contains(got.stdout, "-config") {
+				t.Errorf("stdout = %q, want the flag help", got.stdout)
+			}
+		})
+	}
+}
+
 func TestLifecyclesReportsUnreadableDefaultFile(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	denied := func(string) ([]byte, error) { return nil, fs.ErrPermission }
 
 	code := Main([]string{"lifecycles"}, Env{Stdout: &stdout, Stderr: &stderr, ReadFile: denied})
-	if code != ExitUsage || !strings.Contains(stderr.String(), "read configuration: permission denied") {
-		t.Errorf("exit code = %d, stderr = %q; want %d and a read error", code, stderr.String(), ExitUsage)
+	if code != ExitFailure || !strings.Contains(stderr.String(), "read configuration: permission denied") {
+		t.Errorf("exit code = %d, stderr = %q; want %d and a read error", code, stderr.String(), ExitFailure)
 	}
 }
