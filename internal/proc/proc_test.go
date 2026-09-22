@@ -88,6 +88,16 @@ func runHelper(args []string) int {
 			return 1
 		}
 		return writeAndSleep(rest[0], strconv.Itoa(child.Process.Pid))
+	case "spawn-exit": // spawn-exit <pid-file>: start a grandchild in this process group, record its pid, exit
+		child := exec.Command(os.Args[0], "sleep")
+		child.Env = helperEnviron()
+		if err := child.Start(); err != nil {
+			return 1
+		}
+		if err := os.WriteFile(rest[0], []byte(strconv.Itoa(child.Process.Pid)), 0o600); err != nil {
+			return 1
+		}
+		return 0
 	case "orphan": // orphan <pid-file>: start a grandchild in a new session that keeps stdout open, then exit
 		child := exec.Command(os.Args[0], "sleep")
 		child.Env = helperEnviron()
@@ -298,6 +308,47 @@ func TestRunStopsProcessesTheCommandStarted(t *testing.T) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
 	waitFor(t, "grandchild to be stopped", processGone(grandchild))
+}
+
+// A command that exits cleanly can still leave something running behind it — an agent that starts a dev
+// server, say. Reporting success and walking away would leave it there for good.
+func TestRunStopsProcessesLeftBehindByACommandThatExited(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "grandchild.pid")
+
+	res, err := Exec{}.Run(context.Background(), helper(t, "spawn-exit", pidFile))
+	if err != nil || res.ExitCode != 0 {
+		t.Fatalf("Run = %+v, %v; want a clean exit", res, err)
+	}
+	grandchild := readPID(t, pidFile)
+	t.Cleanup(func() { _ = syscall.Kill(grandchild, syscall.SIGKILL) })
+
+	waitFor(t, "the process left behind to be stopped", processGone(grandchild))
+}
+
+// A command that never ran has no exit status, and reporting 0 would read as success.
+func TestRunReportsNoExitStatusWhenTheCommandNeverRan(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tests := []struct {
+		name string
+		ctx  context.Context
+		cmd  Cmd
+	}{
+		{name: "executable not found", ctx: context.Background(), cmd: Cmd{Name: filepath.Join(t.TempDir(), "nope"), Env: []string{}}},
+		{name: "context already done", ctx: canceled, cmd: helper(t, "exit", "0")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := Exec{}.Run(tt.ctx, tt.cmd)
+			if err == nil {
+				t.Fatal("Run succeeded, want an error")
+			}
+			if res.ExitCode != -1 {
+				t.Errorf("exit code = %d, want -1: the command never ran", res.ExitCode)
+			}
+		})
+	}
 }
 
 func TestRunKillsCommandThatIgnoresTerminate(t *testing.T) {

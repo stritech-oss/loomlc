@@ -14,3 +14,6 @@ func startInOwnGroup(*exec.Cmd) {}
 func terminateGroup(p *os.Process) { _ = p.Kill() } // best effort: the process may already be gone
 
 func killGroup(p *os.Process) { _ = p.Kill() } // best effort: the process may already be gone
+
+// groupAlive can't be answered without process groups, so nothing is cleaned up after a normal exit.
+func groupAlive(*os.Process) bool { return false }

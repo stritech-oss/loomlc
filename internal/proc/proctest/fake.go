@@ -71,6 +71,12 @@ func (f *Fake) SetPath(name, path string) {
 // exit code and error. A command with no matching response is an error, so tests fail loudly on
 // commands they didn't expect.
 func (f *Fake) Run(ctx context.Context, c proc.Cmd) (proc.Result, error) {
+	// Checked before anything is recorded, because proc.Exec refuses a done context before it starts a
+	// process: a fake that records the call would let a test pass against behaviour that can't happen.
+	if err := ctx.Err(); err != nil {
+		return proc.Result{ExitCode: -1}, fmt.Errorf("proctest: run %s: %w", c.Name, err)
+	}
+
 	var stdin string
 	if c.Stdin != nil {
 		b, err := io.ReadAll(c.Stdin)
@@ -86,11 +92,8 @@ func (f *Fake) Run(ctx context.Context, c proc.Cmd) (proc.Result, error) {
 	resp, ok := f.match(call.Argv())
 	f.mu.Unlock()
 
-	if err := ctx.Err(); err != nil {
-		return proc.Result{ExitCode: -1}, fmt.Errorf("proctest: run %s: %w", c.Name, err)
-	}
 	if !ok {
-		return proc.Result{}, fmt.Errorf("proctest: no response registered for %q", call.Argv())
+		return proc.Result{ExitCode: -1}, fmt.Errorf("proctest: no response registered for %q", call.Argv())
 	}
 	if err := write(c.Stdout, resp.Stdout); err != nil {
 		return proc.Result{}, fmt.Errorf("proctest: write stdout of %s: %w", c.Name, err)
