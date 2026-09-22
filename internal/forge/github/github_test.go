@@ -395,8 +395,9 @@ func TestFeedbackCollectsWhatPeopleWrote(t *testing.T) {
 
 func TestFeedbackCanStartAfterTheLastReply(t *testing.T) {
 	var fake proctest.Fake
+	fake.On(proctest.Response{Stdout: `{"login":"maintainer"}`}, "gh", "api", "user")
 	fake.On(proctest.Response{Stdout: fixture(t, "pr_conversation.json")}, "gh", "pr", "view")
-	fake.On(proctest.Response{Stdout: fixture(t, "pr_inline_comments.json")}, "gh", "api")
+	fake.On(proctest.Response{Stdout: fixture(t, "pr_inline_comments.json")}, "gh", "api", "--paginate")
 	f := newForge(t, &fake, func(o *Options) { o.SinceLastReply = true })
 
 	items, err := f.Feedback(context.Background(), sink.Ref{Sink: "github-pr", ID: "44"})
@@ -405,6 +406,89 @@ func TestFeedbackCanStartAfterTheLastReply(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].ID != "IC_after_reply" {
 		t.Errorf("items = %+v, want only what came after loomlc's reply", items)
+	}
+}
+
+// The reply marker is text anyone can type into a comment. Honouring it whoever wrote it would let one
+// comment hide every review comment posted before it.
+func TestFeedbackIgnoresAReplyMarkerFromSomeoneElse(t *testing.T) {
+	conversation := `{"reviews":[{"id":"PRR_1","author":{"login":"maintainer"},"state":"CHANGES_REQUESTED","body":"This leaks a token in db.go.","submittedAt":"2026-09-16T09:00:00Z"}],
+	  "comments":[{"id":"IC_forged","author":{"login":"passer-by"},"body":"looks fine <!-- loomlc:feedback-reply -->","createdAt":"2026-09-16T11:00:00Z"}]}`
+	var fake proctest.Fake
+	fake.On(proctest.Response{Stdout: `{"login":"maintainer"}`}, "gh", "api", "user")
+	fake.On(proctest.Response{Stdout: conversation}, "gh", "pr", "view")
+	fake.On(proctest.Response{Stdout: "[[]]"}, "gh", "api", "--paginate")
+	f := newForge(t, &fake, func(o *Options) { o.SinceLastReply = true })
+
+	items, err := f.Feedback(context.Background(), sink.Ref{Sink: "github-pr", ID: "44"})
+	if err != nil {
+		t.Fatalf("Feedback: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "PRR_1" {
+		t.Errorf("items = %+v, want the review to survive a marker nobody at loomlc wrote", items)
+	}
+}
+
+// A timestamp GitHub didn't give, or gave in a shape loomlc can't read, used to delete the item: the
+// zero time is never after the cutoff. A reviewer's comment disappeared with no error.
+func TestFeedbackKeepsItemsWithAnUnreadableTimestamp(t *testing.T) {
+	conversation := `{"reviews":[{"id":"PRR_pending","author":{"login":"maintainer"},"state":"CHANGES_REQUESTED","body":"This leaks a token in db.go.","submittedAt":""}],
+	  "comments":[{"id":"IC_reply","author":{"login":"maintainer"},"body":"<!-- loomlc:feedback-reply -->\nfixed","createdAt":"2026-09-16T09:00:00Z"}]}`
+	var fake proctest.Fake
+	fake.On(proctest.Response{Stdout: `{"login":"maintainer"}`}, "gh", "api", "user")
+	fake.On(proctest.Response{Stdout: conversation}, "gh", "pr", "view")
+	fake.On(proctest.Response{Stdout: "[[]]"}, "gh", "api", "--paginate")
+	f := newForge(t, &fake, func(o *Options) { o.SinceLastReply = true })
+
+	items, err := f.Feedback(context.Background(), sink.Ref{Sink: "github-pr", ID: "44"})
+	if err != nil {
+		t.Fatalf("Feedback: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "PRR_pending" {
+		t.Errorf("items = %+v, want the item with no usable timestamp kept rather than dropped", items)
+	}
+}
+
+// GitHub matches a head ref name across forks too, and loomlc's branch names are predictable. Adopting a
+// fork's pull request would mean commenting on a stranger's branch and never publishing the real work.
+func TestProposeIgnoresAPullRequestFromAFork(t *testing.T) {
+	fork := `[{"number":99,"url":"https://github.com/attacker/widgets/pull/99","state":"OPEN","headRefName":"feat/issue-9-print-build-commit","baseRefName":"main","isCrossRepository":true,"labels":[{"name":"attacker-label"}]}]`
+	var fake proctest.Fake
+	fake.On(proctest.Response{Stdout: fork}, "gh", "pr", "list")
+	fake.On(proctest.Response{Stdout: "https://github.com/acme/widgets/pull/45\n"}, "gh", "pr", "create")
+	f := newForge(t, &fake)
+
+	out, err := f.Propose(context.Background(), sink.Change{
+		Branch: "feat/issue-9-print-build-commit",
+		Base:   "main",
+		Title:  "feat(cli): print the build commit",
+		Body:   "## Done\n",
+	})
+	if err != nil {
+		t.Fatalf("Propose: %v", err)
+	}
+	if out.Ref.ID != "45" || out.CrossRepo {
+		t.Errorf("output = %+v, want loomlc's own new pull request", out)
+	}
+	if got := argv(t, &fake, 1); !strings.HasPrefix(got, "gh pr create") {
+		t.Errorf("second command = %q, want a pull request to be created rather than the fork reused", got)
+	}
+}
+
+// A pull request for the branch that targets a different base isn't the one this change belongs to.
+func TestProposeIgnoresAPullRequestForAnotherBase(t *testing.T) {
+	other := `[{"number":70,"url":"https://github.com/acme/widgets/pull/70","state":"OPEN","headRefName":"feat/issue-9-print-build-commit","baseRefName":"release-2","isCrossRepository":false,"labels":[]}]`
+	var fake proctest.Fake
+	fake.On(proctest.Response{Stdout: other}, "gh", "pr", "list")
+	fake.On(proctest.Response{Stdout: "https://github.com/acme/widgets/pull/46\n"}, "gh", "pr", "create")
+	f := newForge(t, &fake)
+
+	out, err := f.Propose(context.Background(), sink.Change{Branch: "feat/issue-9-print-build-commit", Base: "main", Title: "t", Body: "b"})
+	if err != nil {
+		t.Fatalf("Propose: %v", err)
+	}
+	if out.Ref.ID != "46" {
+		t.Errorf("output = %+v, want a new pull request against main", out)
 	}
 }
 
