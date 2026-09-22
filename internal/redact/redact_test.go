@@ -2,6 +2,8 @@ package redact
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"testing"
@@ -150,6 +152,8 @@ func TestWriterHoldsBackPartialLinesUntilClose(t *testing.T) {
 	}
 }
 
+// A line too long to hold back is written out except for its tail, which stays until the rest of the
+// line arrives. Everything is written in the end.
 func TestWriterFlushesOverlongLines(t *testing.T) {
 	var out bytes.Buffer
 	w := New().Writer(&out)
@@ -159,7 +163,87 @@ func TestWriterFlushesOverlongLines(t *testing.T) {
 	if err != nil || n != len(long) {
 		t.Fatalf("Write = %d, %v; want %d, nil", n, err, len(long))
 	}
-	if out.Len() != len(long) {
-		t.Errorf("wrote %d bytes before Close, want all %d once the line limit was reached", out.Len(), len(long))
+	if want := len(long) - minHoldBack; out.Len() != want {
+		t.Errorf("wrote %d bytes before Close, want %d: everything but the held-back tail", out.Len(), want)
 	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if out.Len() != len(long) {
+		t.Errorf("wrote %d bytes after Close, want all %d", out.Len(), len(long))
+	}
+}
+
+// The reason the tail is held back: claude prints its whole result as one line, routinely longer than
+// the limit, so a secret can land exactly on the flush boundary.
+func TestWriterMasksASecretSplitByTheLineLimit(t *testing.T) {
+	const secret = "ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	var out bytes.Buffer
+	w := New(secret).Writer(&out)
+
+	head := strings.Repeat("x", maxLine-10) + secret[:14]
+	mustWrite(t, w, head)
+	mustWrite(t, w, secret[14:]+"\n")
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	if strings.Contains(out.String(), secret) {
+		t.Error("the secret was written out in full, split across the flush boundary")
+	}
+	if !strings.Contains(out.String(), Mask) {
+		t.Errorf("output = %q, want the secret masked", tail(out.String(), 80))
+	}
+}
+
+// An unterminated private key header stops masking after a bounded number of lines. Anyone who can file
+// a task or write a review comment can produce one, and it must not hide the rest of the run.
+func TestUnterminatedPrivateKeyBlockGivesUp(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("step started\n-----BEGIN RSA PRIVATE KEY-----\n")
+	for i := range maxKeyLines + 10 {
+		fmt.Fprintf(&b, "line %d\n", i)
+	}
+	b.WriteString("gate: go test failed at foo_test.go:42\n")
+
+	got := New().String(b.String())
+	if !strings.Contains(got, "gate: go test failed at foo_test.go:42") {
+		t.Error("output after an unterminated key block is still masked; an operator would see nothing")
+	}
+	if strings.Contains(got, "line 3\n") {
+		t.Error("the key block itself wasn't masked")
+	}
+}
+
+// A secret value with newlines in it — a PEM file or a JSON blob in an environment variable — is masked
+// line by line, because masking works a line at a time and the whole value can never match one.
+func TestMultiLineSecretValueIsMasked(t *testing.T) {
+	values := SecretValues([]string{"DEPLOY_KEY=header-line-one\nbody-line-two-long-enough\nfooter-line"})
+	got := New(values...).String("dumping header-line-one\nbody-line-two-long-enough\nfooter-line\n")
+	for _, fragment := range []string{"header-line-one", "body-line-two-long-enough"} {
+		if strings.Contains(got, fragment) {
+			t.Errorf("output = %q, want %q masked", got, fragment)
+		}
+	}
+}
+
+func TestStringDoesNotAddATrailingMask(t *testing.T) {
+	got := New().String("-----BEGIN PRIVATE KEY-----\nkey material\n-----END PRIVATE KEY-----\n")
+	if n := strings.Count(got, Mask); n != 3 {
+		t.Errorf("output = %q has %d masks, want 3: one per line, none for the empty tail", got, n)
+	}
+}
+
+func mustWrite(t *testing.T, w io.Writer, s string) {
+	t.Helper()
+	if _, err := w.Write([]byte(s)); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+}
+
+func tail(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return "…" + s[len(s)-n:]
 }
