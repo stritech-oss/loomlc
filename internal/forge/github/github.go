@@ -8,11 +8,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/stritech-oss/loomlc/internal/proc"
@@ -32,7 +34,9 @@ const (
 	maxFeedbackBody  = 16 << 10
 	// maxStderr bounds how much of gh's error output an error message keeps.
 	maxStderr = 4 << 10
-	truncated = "\n…truncated by loomlc…"
+	// maxCommand bounds the command an error message echoes back.
+	maxCommand = 1 << 10
+	truncated  = "\n…truncated by loomlc…"
 )
 
 var (
@@ -78,6 +82,9 @@ type Options struct {
 	Feedback    FeedbackLabels
 	// SinceLastReply limits collected feedback to items posted after loomlc's last reply.
 	SinceLastReply bool
+	// SelfLogin is the account loomlc posts as, used to tell its own replies from anyone else's. Empty
+	// asks gh which account it is authenticated as.
+	SelfLogin string
 }
 
 // Forge reads tasks from GitHub issues and publishes results as pull requests.
@@ -85,6 +92,9 @@ type Forge struct {
 	opts   Options
 	runner proc.Runner
 	env    []string
+
+	mu        sync.Mutex
+	selfLogin string // the account gh posts as, asked for once and kept
 }
 
 // New returns a Forge that runs gh through runner.
@@ -113,7 +123,7 @@ func New(opts Options, runner proc.Runner) (*Forge, error) {
 	}
 	// gh must never wait for input or print update notices: nobody is watching an unattended run.
 	env := append(slices.Clone(opts.Env), "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1")
-	return &Forge{opts: opts, runner: runner, env: env}, nil
+	return &Forge{opts: opts, runner: runner, env: env, selfLogin: opts.SelfLogin}, nil
 }
 
 // NextReady returns the lowest-numbered open task carrying the trigger label that isn't already claimed,
@@ -309,7 +319,7 @@ func (f *Forge) Output(ctx context.Context, ref sink.Ref) (sink.Output, error) {
 // Propose publishes a change as a pull request. When one is already open for the branch, it's reused, since
 // pushing to the branch has already updated it.
 func (f *Forge) Propose(ctx context.Context, change sink.Change) (sink.Output, error) {
-	existing, found, err := f.openForBranch(ctx, change.Branch)
+	existing, found, err := f.openForBranch(ctx, change.Branch, change.Base)
 	if err != nil {
 		return sink.Output{}, fmt.Errorf("propose %s: %w", change.Branch, err)
 	}
@@ -381,17 +391,9 @@ func (f *Forge) Feedback(ctx context.Context, ref sink.Ref) ([]sink.FeedbackItem
 		return nil, fmt.Errorf("read inline feedback on %s: %w", ref, err)
 	}
 
-	var items []sink.FeedbackItem
-	var lastReply time.Time
+	var entries []conversationItem
 	add := func(item sink.FeedbackItem, body string) {
-		if strings.Contains(body, sink.ReplyMarker) && item.CreatedAt.After(lastReply) {
-			lastReply = item.CreatedAt
-		}
-		if strings.Contains(body, sink.Marker) || isBot(item.Author) || strings.TrimSpace(body) == "" {
-			return
-		}
-		item.Body = bound(body, maxFeedbackBody)
-		items = append(items, item)
+		entries = append(entries, conversationItem{item: item, body: body})
 	}
 
 	for _, review := range conversation.Reviews {
@@ -413,14 +415,39 @@ func (f *Forge) Feedback(ctx context.Context, ref sink.Ref) ([]sink.FeedbackItem
 		}
 	}
 
-	if f.opts.SinceLastReply && !lastReply.IsZero() {
-		items = slices.DeleteFunc(items, func(item sink.FeedbackItem) bool { return !item.CreatedAt.After(lastReply) })
+	lastReply, err := f.lastReply(ctx, entries)
+	if err != nil {
+		return nil, fmt.Errorf("read feedback on %s: %w", ref, err)
 	}
-	slices.SortStableFunc(items, func(a, b sink.FeedbackItem) int {
-		if a.CreatedAt.Equal(b.CreatedAt) {
-			return strings.Compare(a.ID, b.ID)
+
+	var items []sink.FeedbackItem
+	for _, e := range entries {
+		switch {
+		case strings.Contains(e.body, sink.Marker), isBot(e.item.Author), strings.TrimSpace(e.body) == "":
+		// An item whose timestamp GitHub didn't give, or gave in a shape loomlc can't read, is kept:
+		// dropping a reviewer's comment because of that would be silent and invisible.
+		case !e.item.CreatedAt.IsZero() && !lastReply.IsZero() && !e.item.CreatedAt.After(lastReply):
+		default:
+			e.item.Body = bound(e.body, maxFeedbackBody)
+			items = append(items, e.item)
 		}
-		return a.CreatedAt.Compare(b.CreatedAt)
+	}
+
+	slices.SortStableFunc(items, func(a, b sink.FeedbackItem) int {
+		// Items with no usable timestamp sort last, so the cap below trims the oldest known feedback
+		// rather than the feedback loomlc knows least about.
+		switch {
+		case a.CreatedAt.IsZero() && b.CreatedAt.IsZero():
+			return strings.Compare(a.ID, b.ID)
+		case a.CreatedAt.IsZero():
+			return 1
+		case b.CreatedAt.IsZero():
+			return -1
+		case a.CreatedAt.Equal(b.CreatedAt):
+			return strings.Compare(a.ID, b.ID)
+		default:
+			return a.CreatedAt.Compare(b.CreatedAt)
+		}
 	})
 	if len(items) > maxFeedbackItems {
 		items = items[len(items)-maxFeedbackItems:] // keep the most recent
@@ -428,8 +455,69 @@ func (f *Forge) Feedback(ctx context.Context, ref sink.Ref) ([]sink.FeedbackItem
 	return items, nil
 }
 
-// openForBranch returns the open pull request for a branch, if there is one.
-func (f *Forge) openForBranch(ctx context.Context, branch string) (sink.Output, bool, error) {
+// conversationItem is one thing someone wrote on a pull request, before loomlc decides whether it counts
+// as feedback.
+type conversationItem struct {
+	item sink.FeedbackItem
+	body string
+}
+
+// lastReply returns when loomlc last replied to feedback here, or the zero time when it hasn't replied or
+// when the cutoff isn't in use.
+//
+// The reply marker is only text in a comment body, and anyone who can comment can type it. Honouring it
+// whoever wrote it would let one comment saying "looks fine" plus the marker hide every review comment
+// that came before it. So it counts only from the account gh is authenticated as, which is the account
+// loomlc posts under.
+func (f *Forge) lastReply(ctx context.Context, entries []conversationItem) (time.Time, error) {
+	var last time.Time
+	if !f.opts.SinceLastReply || !slices.ContainsFunc(entries, func(e conversationItem) bool {
+		return strings.Contains(e.body, sink.ReplyMarker)
+	}) {
+		return last, nil
+	}
+
+	self, err := f.self(ctx)
+	if err != nil {
+		return last, err
+	}
+	for _, e := range entries {
+		if strings.Contains(e.body, sink.ReplyMarker) && strings.EqualFold(e.item.Author, self) && e.item.CreatedAt.After(last) {
+			last = e.item.CreatedAt
+		}
+	}
+	return last, nil
+}
+
+// self returns the login gh is authenticated as. It's asked for once, and only when something claims to
+// be one of loomlc's own replies.
+func (f *Forge) self(ctx context.Context) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.selfLogin != "" {
+		return f.selfLogin, nil
+	}
+	var user struct {
+		Login string `json:"login"`
+	}
+	if err := f.decode(ctx, &user, "api", "user"); err != nil {
+		return "", fmt.Errorf("ask gh which account it posts as: %w", err)
+	}
+	if user.Login == "" {
+		return "", errors.New("gh didn't say which account it posts as")
+	}
+	f.selfLogin = user.Login
+	return f.selfLogin, nil
+}
+
+// openForBranch returns loomlc's own open pull request for a branch, if there is one.
+//
+// GitHub matches a head ref name across every pull request aimed at the repository, forks included, and
+// loomlc's branch names are predictable. A pull request from a fork is somebody else's: loomlc can't push
+// to it, and reusing it would mean commenting on a stranger's branch, marking the task done against it,
+// and never publishing the work that was actually built. So only a pull request from this repository,
+// aimed at the base the change names, is ever reused.
+func (f *Forge) openForBranch(ctx context.Context, branch, base string) (sink.Output, bool, error) {
 	var prs []prView
 	err := f.decode(ctx, &prs,
 		"pr", "list", "--repo", f.opts.Repo, "--head", branch, "--state", "open", "--limit", "10",
@@ -437,10 +525,13 @@ func (f *Forge) openForBranch(ctx context.Context, branch string) (sink.Output, 
 	if err != nil {
 		return sink.Output{}, false, err
 	}
-	if len(prs) == 0 {
-		return sink.Output{}, false, nil
+	for _, pr := range prs {
+		if pr.CrossRepo || pr.HeadRefName != branch || pr.BaseRefName != base {
+			continue
+		}
+		return f.output(pr), true, nil
 	}
-	return f.output(prs[0]), true, nil
+	return sink.Output{}, false, nil
 }
 
 func (f *Forge) view(ctx context.Context, number string) (sink.Output, error) {
@@ -476,10 +567,10 @@ func (f *Forge) run(ctx context.Context, stdin string, args ...string) (string, 
 
 	res, err := f.runner.Run(ctx, cmd)
 	if err != nil {
-		return "", fmt.Errorf("gh %s: %w", strings.Join(args, " "), err)
+		return "", fmt.Errorf("gh %s: %w", command(args), err)
 	}
 	if res.ExitCode != 0 {
-		return "", fmt.Errorf("gh %s: exit status %d: %s", strings.Join(args, " "), res.ExitCode, bound(strings.TrimSpace(stderr.String()), maxStderr))
+		return "", fmt.Errorf("gh %s: exit status %d: %s", command(args), res.ExitCode, bound(strings.TrimSpace(stderr.String()), maxStderr))
 	}
 	return stdout.String(), nil
 }
@@ -491,7 +582,7 @@ func (f *Forge) decode(ctx context.Context, out any, args ...string) error {
 		return err
 	}
 	if err := json.Unmarshal([]byte(stdout), out); err != nil {
-		return fmt.Errorf("gh %s: unreadable output: %w", strings.Join(args, " "), err)
+		return fmt.Errorf("gh %s: unreadable output: %w", command(args), err)
 	}
 	return nil
 }
@@ -562,6 +653,30 @@ func number(ref fmt.Stringer, id string) (string, error) {
 		return "", fmt.Errorf("%s: a GitHub issue or pull request id must be a number, not %q", ref, id)
 	}
 	return id, nil
+}
+
+// valueFlags carry text loomlc didn't write, such as a title an agent chose. An error says the flag was
+// there without repeating what was in it.
+var valueFlags = []string{"--title", "--body", "--add-label", "--remove-label", "--label"}
+
+// command renders args for an error message: bounded, with the values of text-carrying flags left out,
+// so a failure doesn't paste an agent's title or a label's contents into every log that sees it.
+func command(args []string) string {
+	parts := make([]string, 0, len(args))
+	skip := false
+	for _, arg := range args {
+		switch {
+		case skip:
+			parts = append(parts, "…")
+			skip = false
+		case slices.Contains(valueFlags, arg):
+			parts = append(parts, arg)
+			skip = true
+		default:
+			parts = append(parts, arg)
+		}
+	}
+	return bound(strings.Join(parts, " "), maxCommand)
 }
 
 func labelNames(labels []label) []string {
