@@ -83,7 +83,10 @@ type Options struct {
 	// SinceLastReply limits collected feedback to items posted after loomlc's last reply.
 	SinceLastReply bool
 	// SelfLogin is the account loomlc posts as, used to tell its own replies from anyone else's. Empty
-	// asks gh which account it is authenticated as.
+	// asks gh which account it is authenticated as, which a GitHub App installation token can't answer.
+	//
+	// When loomlc runs as the operator, this is the operator's own account, so a reply marker the
+	// operator typed themselves counts as loomlc's. Giving loomlc its own account separates the two.
 	SelfLogin string
 }
 
@@ -501,7 +504,9 @@ func (f *Forge) self(ctx context.Context) (string, error) {
 		Login string `json:"login"`
 	}
 	if err := f.decode(ctx, &user, "api", "user"); err != nil {
-		return "", fmt.Errorf("ask gh which account it posts as: %w", err)
+		// A GitHub App installation token can't read /user at all, so this is a normal thing to hit
+		// rather than a broken setup: say which setting answers it instead.
+		return "", fmt.Errorf("ask gh which account it posts as: %w; set the sink's self_login to that account to skip the question", err)
 	}
 	if user.Login == "" {
 		return "", errors.New("gh didn't say which account it posts as")
