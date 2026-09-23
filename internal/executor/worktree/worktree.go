@@ -20,6 +20,9 @@ import (
 	"github.com/stritech-oss/loomlc/internal/proc"
 )
 
+// maxBackupNames bounds how many names a backup ref tries before giving up.
+const maxBackupNames = 50
+
 // AttemptsRef is the ref namespace that keeps commits from earlier attempts on a branch.
 const AttemptsRef = "refs/loomlc/attempts/"
 
@@ -124,6 +127,13 @@ func (e *Executor) validate(ctx context.Context, spec executor.Spec) error {
 			return fmt.Errorf("%q isn't a valid branch name: %w", branch, err)
 		}
 	}
+	// The run id becomes part of a ref, and git's rules are stricter than the pattern above: "run.lock"
+	// and "run-1." are refused. Checking here fails the first Prepare, rather than the second one — the
+	// one that has an earlier attempt to save.
+	backup := AttemptsRef + spec.Branch + "/" + spec.RunID
+	if _, err := e.git.Run(ctx, e.repo, "check-ref-format", backup); err != nil {
+		return fmt.Errorf("run ID %q can't be part of a ref name (%s): %w", spec.RunID, backup, err)
+	}
 	return nil
 }
 
@@ -175,21 +185,94 @@ func (e *Executor) prepare(ctx context.Context, spec executor.Spec) (executor.Wo
 	}, nil
 }
 
-// remove deletes whatever is at dir, whether a registered worktree or a leftover directory, and clears
-// registrations of worktrees whose directories are gone.
+// remove deletes whatever is at dir: a registered worktree, along with its registration, or a leftover
+// directory that git doesn't know about.
+//
+// A worktree someone locked is left alone. git locks a worktree while it creates one, and an operator
+// locks one to protect it — a removable volume, a review in progress — so "remove --force failed" can't
+// be read as "not a worktree, delete the directory". Doing that destroys files the lock existed to
+// protect, and leaves a registration that no longer has a directory.
 func (e *Executor) remove(ctx context.Context, dir string) error {
-	if _, err := os.Stat(dir); err == nil {
-		if _, err := e.git.Run(ctx, e.repo, "worktree", "remove", "--force", dir); err != nil {
-			// Not a registered worktree: the directory is a leftover inside loomlc's own root.
-			if err := os.RemoveAll(dir); err != nil {
-				return fmt.Errorf("remove leftover workspace %s: %w", dir, err)
-			}
-		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("inspect workspace %s: %w", dir, err)
+	registered, lock, err := e.registration(ctx, dir)
+	if err != nil {
+		return err
 	}
-	_, err := e.git.Run(ctx, e.repo, "worktree", "prune")
-	return err
+	_, statErr := os.Stat(dir)
+	switch {
+	case statErr != nil && !errors.Is(statErr, fs.ErrNotExist):
+		return fmt.Errorf("inspect workspace %s: %w", dir, statErr)
+
+	case !registered:
+		if errors.Is(statErr, fs.ErrNotExist) {
+			return nil
+		}
+		// git doesn't know this path, so nothing of git's is thrown away by deleting it.
+		if err := os.RemoveAll(dir); err != nil {
+			return fmt.Errorf("remove leftover workspace %s: %w", dir, err)
+		}
+		return nil
+
+	case lock.locked && !errors.Is(statErr, fs.ErrNotExist):
+		return fmt.Errorf("workspace %s is locked (%s); unlock it with `git worktree unlock %s` if it's finished with", dir, lock.reason, dir)
+
+	case lock.locked:
+		// Locked but the directory is gone: a leftover registration, often from an interrupted
+		// `worktree add`, which git locks while it works. Nothing is lost by clearing it.
+		if _, err := e.git.Run(ctx, e.repo, "worktree", "remove", "--force", "--force", dir); err != nil {
+			return fmt.Errorf("clear the leftover registration for %s: %w", dir, err)
+		}
+		return nil
+
+	default:
+		if _, err := e.git.Run(ctx, e.repo, "worktree", "remove", "--force", dir); err != nil {
+			return fmt.Errorf("remove workspace %s: %w", dir, err)
+		}
+		return nil
+	}
+}
+
+// worktreeLock says whether a registered worktree is locked, and why.
+type worktreeLock struct {
+	locked bool
+	reason string
+}
+
+// registration reports whether git knows dir as a worktree, and its lock. It replaces `git worktree
+// prune`, which is repository-wide: pruning would discard the administrative files of any of the
+// operator's own worktrees whose directory is momentarily absent, index and all.
+func (e *Executor) registration(ctx context.Context, dir string) (bool, worktreeLock, error) {
+	out, err := e.git.Run(ctx, e.repo, "worktree", "list", "--porcelain")
+	if err != nil {
+		return false, worktreeLock{}, fmt.Errorf("list worktrees: %w", err)
+	}
+
+	want, err := filepath.Abs(dir)
+	if err != nil {
+		return false, worktreeLock{}, fmt.Errorf("resolve workspace %s: %w", dir, err)
+	}
+	found := false
+	var lock worktreeLock
+	for line := range strings.SplitSeq(out, "\n") {
+		switch field, value, _ := strings.Cut(strings.TrimSpace(line), " "); {
+		case field == "worktree":
+			if found {
+				return true, lock, nil // the next entry started; this one had no lock line
+			}
+			path, err := filepath.Abs(value)
+			found = err == nil && path == want
+		case found && field == "locked":
+			return true, worktreeLock{locked: true, reason: lockReason(value)}, nil
+		}
+	}
+	return found, lock, nil
+}
+
+// lockReason describes a lock for an error message. git records a lock with no reason as a bare line.
+func lockReason(reason string) string {
+	if strings.TrimSpace(reason) == "" {
+		return "no reason given"
+	}
+	return reason
 }
 
 // backUpAttempt saves the local branch's commits that aren't in start, so that resetting the branch doesn't
@@ -208,11 +291,27 @@ func (e *Executor) backUpAttempt(ctx context.Context, spec executor.Spec, start 
 	if err != nil || unpushed == "0" {
 		return "", err
 	}
-	backup := AttemptsRef + spec.Branch + "/" + spec.RunID
-	if _, err := e.git.Run(ctx, e.repo, "update-ref", backup, local); err != nil {
-		return "", err
+	// update-ref overwrites, and a ref outside refs/heads gets no reflog by default, so writing the same
+	// name twice — a run that prepares its workspace more than once under one run id — would leave the
+	// earlier attempt's commits unreachable and eventually collected. The backup is created, never
+	// replaced, and takes the next free name when something is already there.
+	base := AttemptsRef + spec.Branch + "/" + spec.RunID
+	for attempt := 1; attempt <= maxBackupNames; attempt++ {
+		backup := base
+		if attempt > 1 {
+			backup = fmt.Sprintf("%s.%d", base, attempt)
+		}
+		// An empty old value means "only if it doesn't exist yet".
+		_, err := e.git.Run(ctx, e.repo, "update-ref", backup, local, "")
+		if err == nil {
+			return backup, nil
+		}
+		var gerr *git.Error
+		if !errors.As(err, &gerr) {
+			return "", err
+		}
 	}
-	return backup, nil
+	return "", fmt.Errorf("back up the earlier attempt on %s: %s and %d names after it are taken", spec.Branch, base, maxBackupNames-1)
 }
 
 // checkInsideRoot refuses to act on directories outside the workspace root.
