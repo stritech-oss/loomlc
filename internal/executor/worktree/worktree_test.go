@@ -294,3 +294,98 @@ func TestNewValidatesOptions(t *testing.T) {
 		t.Error("New accepted an empty remote")
 	}
 }
+
+// A worktree someone locked is protected, not deleted. git locks one while it creates it, and an
+// operator locks one to keep it — so "remove failed" must not be read as "not a worktree, delete it".
+func TestPrepareRefusesToDestroyALockedWorkspace(t *testing.T) {
+	f := newFixture(t)
+	ws := f.prepare(newBranch("issue-42", "feat/issue-42"))
+	precious := filepath.Join(ws.Dir, "uncommitted.txt")
+	if err := os.WriteFile(precious, []byte("hours of work\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	f.git(f.repo, "worktree", "lock", "--reason", "review in progress", ws.Dir)
+
+	_, err := f.exec.Prepare(context.Background(), newBranch("issue-42", "feat/issue-42"))
+	if err == nil {
+		t.Fatal("Prepare succeeded on a locked workspace, want it refused")
+	}
+	if !strings.Contains(err.Error(), "review in progress") {
+		t.Errorf("error = %v, want it to name the lock reason", err)
+	}
+	if _, err := os.Stat(precious); err != nil {
+		t.Errorf("the locked workspace's files were deleted anyway: %v", err)
+	}
+}
+
+// A locked registration whose directory is gone is a leftover — an interrupted `worktree add` leaves
+// exactly that — and clearing it is what frees the key again.
+func TestPrepareClearsALeftoverLockedRegistration(t *testing.T) {
+	f := newFixture(t)
+	ws := f.prepare(newBranch("issue-42", "feat/issue-42"))
+	f.git(f.repo, "worktree", "lock", "--reason", "initializing", ws.Dir)
+	if err := os.RemoveAll(ws.Dir); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+
+	if _, err := f.exec.Prepare(context.Background(), newBranch("issue-42", "feat/issue-42")); err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+}
+
+// Pruning is repository-wide, so it used to discard the administrative files of any worktree of the
+// operator's whose directory was momentarily absent — a removable volume, a directory being moved.
+func TestPrepareLeavesTheOperatorsOwnWorktreesAlone(t *testing.T) {
+	f := newFixture(t)
+	portable := filepath.Join(t.TempDir(), "portable")
+	f.git(f.repo, "worktree", "add", "--quiet", "-b", "operator/wip", portable)
+	f.commit(portable, "staged.txt", "work\n", "feat: operator work")
+	moved := portable + "-unmounted"
+	if err := os.Rename(portable, moved); err != nil {
+		t.Fatalf("move the operator's worktree away: %v", err)
+	}
+
+	f.prepare(newBranch("issue-42", "feat/issue-42"))
+
+	if err := os.Rename(moved, portable); err != nil {
+		t.Fatalf("move it back: %v", err)
+	}
+	if out := f.git(portable, "rev-parse", "--abbrev-ref", "HEAD"); out != "operator/wip" {
+		t.Errorf("the operator's worktree reports %q; its registration was pruned", out)
+	}
+}
+
+// update-ref overwrites, and refs outside refs/heads keep no reflog, so a run that prepared twice under
+// one id used to leave the first attempt's commits unreachable.
+func TestBackupRefsDoNotOverwriteEachOther(t *testing.T) {
+	f := newFixture(t)
+	ws := f.prepare(newBranch("issue-42", "feat/issue-42"))
+	first := f.commit(ws.Dir, "one.txt", "1\n", "feat: attempt one")
+
+	spec := newBranch("issue-42", "feat/issue-42") // the same run id again
+	ws = f.prepare(spec)
+	second := f.commit(ws.Dir, "two.txt", "2\n", "feat: attempt two")
+	f.prepare(spec)
+
+	for _, sha := range []string{first, second} {
+		out := f.git(f.repo, "for-each-ref", "--contains", sha, "--format=%(refname)", AttemptsRef)
+		if strings.TrimSpace(out) == "" {
+			t.Errorf("no backup ref reaches %s; that attempt's commits are unreachable", sha[:7])
+		}
+	}
+}
+
+// A run id that passes the key pattern can still be impossible as part of a ref. Failing on the first
+// Prepare beats failing on the second, which is the one with an earlier attempt to save.
+func TestPrepareRejectsRunIDsThatCannotFormARef(t *testing.T) {
+	f := newFixture(t)
+	for _, runID := range []string{"run.lock", "run-1.", "a..b"} {
+		t.Run(runID, func(t *testing.T) {
+			spec := newBranch("issue-42", "feat/issue-42")
+			spec.RunID = runID
+			if _, err := f.exec.Prepare(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "ref name") {
+				t.Errorf("Prepare = %v, want it refused for a run id that can't be part of a ref", err)
+			}
+		})
+	}
+}
