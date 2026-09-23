@@ -149,11 +149,29 @@ func validateSink(p *problems, name string, s Sink) {
 		p.add(at+".reviewer", "%q isn't a valid GitHub username", s.Reviewer)
 	}
 	checkRelativePath(p, at+".template", s.Template, false)
+	validateFeedbackFrom(p, at+".feedback.from", s.Feedback.From)
 	checkLabels(p, at, map[string]string{
 		"label":                s.Label,
 		"feedback.label":       s.Feedback.Label,
 		"feedback.in_progress": s.Feedback.InProgress,
 	})
+}
+
+// authorAssociations are the values GitHub reports for a comment's author.
+var authorAssociations = []string{"OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "MANNEQUIN", "NONE"}
+
+// validateFeedbackFrom checks the associations whose comments a run acts on. A typo here would quietly
+// widen or close the set, and either way nobody would notice until a run behaved oddly.
+func validateFeedbackFrom(p *problems, at string, from []string) {
+	if len(from) == 0 {
+		p.add(at, "is required; %s are the people who can change the repository themselves", strings.Join([]string{"OWNER", "MEMBER", "COLLABORATOR"}, ", "))
+		return
+	}
+	for i, association := range from {
+		if !slices.Contains(authorAssociations, association) {
+			p.add(fmt.Sprintf("%s[%d]", at, i), "%q isn't a GitHub author association; use one of %s", association, strings.Join(authorAssociations, ", "))
+		}
+	}
 }
 
 func validateLifecycle(p *problems, c *Config, name string, lc Lifecycle) {
