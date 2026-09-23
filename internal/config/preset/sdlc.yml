@@ -41,6 +41,7 @@ sinks:
       label: agent-revise
       in_progress: agent-revise-in-progress
       since_last_reply: true
+      from: [OWNER, MEMBER, COLLABORATOR]
 
 lifecycles:
   sdlc:

@@ -46,6 +46,8 @@ func TestParseReportsInvalidConfiguration(t *testing.T) {
 		{name: "role and output disagree", yaml: "lifecycles:\n  sdlc:\n    steps:\n      - name: plan\n        output: verdict\n", wantErr: []string{"steps[0].output: the planner role produces a plan, not a verdict"}},
 		{name: "fourth step", yaml: "lifecycles:\n  sdlc:\n    steps:\n      - name: review\n        provider: claude\n        role: qa\n        readonly: true\n        timeout: 10m\n", wantErr: []string{"lifecycles.sdlc.steps: Phase 0 lifecycles need exactly three steps", "found 4 steps"}},
 		{name: "feedback without the loop", yaml: "lifecycles:\n  sdlc:\n    feedback:\n      steps: [qa]\n", wantErr: []string{"lifecycles.sdlc.feedback.steps: must be [engineer, qa]"}},
+		{name: "unknown feedback association", yaml: "sinks:\n  github-pr:\n    feedback:\n      from: [OWNER, REVIEWER]\n", wantErr: []string{"sinks.github-pr.feedback.from[1]:", `"REVIEWER" isn't a GitHub author association`}},
+		{name: "no feedback associations", yaml: "sinks:\n  github-pr:\n    feedback:\n      from: []\n", wantErr: []string{"sinks.github-pr.feedback.from: is required"}},
 		{name: "every problem at once", yaml: "version: 2\nlifecycles:\n  sdlc:\n    concurrency: 0\n", wantErr: []string{"version: must be 1", "concurrency: must be at least 1"}},
 	}
 	for _, tt := range tests {

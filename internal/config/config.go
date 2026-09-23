@@ -98,6 +98,9 @@ type SinkFeedback struct {
 	InProgress string `yaml:"in_progress"`
 	// SinceLastReply limits feedback to comments made after loomlc last replied.
 	SinceLastReply bool `yaml:"since_last_reply"`
+	// From are the GitHub author associations whose comments count as feedback. Anyone can comment on a
+	// pull request in a public repository, and an agent acts on what it's given.
+	From []string `yaml:"from"`
 }
 
 // Lifecycle is a named sequence of steps run over a task.

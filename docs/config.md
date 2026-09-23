@@ -121,6 +121,7 @@ The preset defines `github-pr`.
 | `feedback.label` | `agent-revise` | Label a reviewer adds to have loomlc act on review feedback. |
 | `feedback.in_progress` | `agent-revise-in-progress` | Label loomlc adds while it works on that feedback. |
 | `feedback.since_last_reply` | `true` | Only use feedback posted after loomlc's last reply. |
+| `feedback.from` | `[OWNER, MEMBER, COLLABORATOR]` | Whose comments count as feedback, by GitHub author association. Anyone can comment on a pull request in a public repository, and an agent acts on what it is given, so the default is the people who could have made the change themselves. Adding `CONTRIBUTOR` or `NONE` widens that to people who can't. |
 
 The three labels must be different.
 
