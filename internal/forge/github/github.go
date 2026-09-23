@@ -82,6 +82,9 @@ type Options struct {
 	Feedback    FeedbackLabels
 	// SinceLastReply limits collected feedback to items posted after loomlc's last reply.
 	SinceLastReply bool
+	// FeedbackFrom are the GitHub author associations whose comments count as feedback. Empty means
+	// OWNER, MEMBER and COLLABORATOR: the people who could have made the change themselves.
+	FeedbackFrom []string
 	// SelfLogin is the account loomlc posts as, used to tell its own replies from anyone else's. Empty
 	// asks gh which account it is authenticated as, which a GitHub App installation token can't answer.
 	//
@@ -395,15 +398,15 @@ func (f *Forge) Feedback(ctx context.Context, ref sink.Ref) ([]sink.FeedbackItem
 	}
 
 	var entries []conversationItem
-	add := func(item sink.FeedbackItem, body string) {
-		entries = append(entries, conversationItem{item: item, body: body})
+	add := func(item sink.FeedbackItem, body, association string) {
+		entries = append(entries, conversationItem{item: item, body: body, association: association})
 	}
 
 	for _, review := range conversation.Reviews {
-		add(sink.FeedbackItem{ID: review.ID, Kind: "review", Author: review.Author.Login, CreatedAt: parseTime(review.SubmittedAt)}, review.Body)
+		add(sink.FeedbackItem{ID: review.ID, Kind: "review", Author: review.Author.Login, CreatedAt: parseTime(review.SubmittedAt)}, review.Body, review.Association)
 	}
 	for _, comment := range conversation.Comments {
-		add(sink.FeedbackItem{ID: comment.ID, Kind: "comment", Author: comment.Author.Login, CreatedAt: parseTime(comment.CreatedAt)}, comment.Body)
+		add(sink.FeedbackItem{ID: comment.ID, Kind: "comment", Author: comment.Author.Login, CreatedAt: parseTime(comment.CreatedAt)}, comment.Body, comment.Association)
 	}
 	for _, page := range pages {
 		for _, inline := range page {
@@ -414,7 +417,7 @@ func (f *Forge) Feedback(ctx context.Context, ref sink.Ref) ([]sink.FeedbackItem
 				Path:      inline.Path,
 				Line:      inline.Line,
 				CreatedAt: parseTime(inline.CreatedAt),
-			}, inline.Body)
+			}, inline.Body, inline.Association)
 		}
 	}
 
@@ -427,6 +430,10 @@ func (f *Forge) Feedback(ctx context.Context, ref sink.Ref) ([]sink.FeedbackItem
 	for _, e := range entries {
 		switch {
 		case strings.Contains(e.body, sink.Marker), isBot(e.item.Author), strings.TrimSpace(e.body) == "":
+		// Text from someone who can't change the repository themselves isn't an instruction to an
+		// agent that can. On a public repository this is the difference between a reviewer and a
+		// passer-by.
+		case !f.trusted(e.association):
 		// An item whose timestamp GitHub didn't give, or gave in a shape loomlc can't read, is kept:
 		// dropping a reviewer's comment because of that would be silent and invisible.
 		case !e.item.CreatedAt.IsZero() && !lastReply.IsZero() && !e.item.CreatedAt.After(lastReply):
@@ -463,6 +470,23 @@ func (f *Forge) Feedback(ctx context.Context, ref sink.Ref) ([]sink.FeedbackItem
 type conversationItem struct {
 	item sink.FeedbackItem
 	body string
+	// association is GitHub's view of the author's standing in the repository: OWNER, MEMBER,
+	// COLLABORATOR, CONTRIBUTOR, NONE, and a few others.
+	association string
+}
+
+// writeAccess are the associations GitHub gives people who can change the repository themselves. In a
+// public repository anyone can comment on a pull request, and a labelled one is being read by an agent,
+// so feedback is taken only from people who could have made the change by hand.
+var writeAccess = []string{"OWNER", "MEMBER", "COLLABORATOR"}
+
+// trusted reports whether feedback from an author with this association is acted on.
+func (f *Forge) trusted(association string) bool {
+	allowed := f.opts.FeedbackFrom
+	if len(allowed) == 0 {
+		allowed = writeAccess
+	}
+	return slices.ContainsFunc(allowed, func(a string) bool { return strings.EqualFold(a, association) })
 }
 
 // lastReply returns when loomlc last replied to feedback here, or the zero time when it hasn't replied or
@@ -640,23 +664,26 @@ type (
 		Reviews []struct {
 			ID          string `json:"id"`
 			Author      actor  `json:"author"`
+			Association string `json:"authorAssociation"`
 			Body        string `json:"body"`
 			SubmittedAt string `json:"submittedAt"`
 		} `json:"reviews"`
 		Comments []struct {
-			ID        string `json:"id"`
-			Author    actor  `json:"author"`
-			Body      string `json:"body"`
-			CreatedAt string `json:"createdAt"`
+			ID          string `json:"id"`
+			Author      actor  `json:"author"`
+			Association string `json:"authorAssociation"`
+			Body        string `json:"body"`
+			CreatedAt   string `json:"createdAt"`
 		} `json:"comments"`
 	}
 	inlineComment struct {
-		ID        int64  `json:"id"`
-		User      actor  `json:"user"`
-		Body      string `json:"body"`
-		Path      string `json:"path"`
-		Line      int    `json:"line"`
-		CreatedAt string `json:"created_at"`
+		ID          int64  `json:"id"`
+		User        actor  `json:"user"`
+		Association string `json:"author_association"`
+		Body        string `json:"body"`
+		Path        string `json:"path"`
+		Line        int    `json:"line"`
+		CreatedAt   string `json:"created_at"`
 	}
 )
 
