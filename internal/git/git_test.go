@@ -64,3 +64,38 @@ func TestNewDoesNotModifyTheCallersEnvironment(t *testing.T) {
 		t.Errorf("New wrote %q into the caller's slice", got)
 	}
 }
+
+// GIT_DIR and its relatives outrank the directory a command runs in, and git sets them for hooks,
+// `git rebase --exec`, `git bisect run`, and several CI checkout actions. A caller that passes its own
+// environment through — the documented way to reach a remote — would otherwise have every command act on
+// whatever repository those name.
+func TestNewDropsVariablesThatRedirectTheRepository(t *testing.T) {
+	var fake proctest.Fake
+	fake.On(proctest.Response{}, "git")
+	env := []string{
+		"HOME=/home/user",
+		"GIT_DIR=/elsewhere/.git",
+		"GIT_WORK_TREE=/elsewhere",
+		"GIT_INDEX_FILE=/elsewhere/.git/index",
+		"GIT_OBJECT_DIRECTORY=/elsewhere/.git/objects",
+		"GIT_NAMESPACE=other",
+		"GIT_SSH_COMMAND=ssh -i key",
+	}
+
+	if _, err := New(&fake, env).Run(context.Background(), "/repo", "status"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	got := strings.Join(fake.Calls()[0].Cmd.Env, " ")
+	for _, gone := range []string{"GIT_DIR=", "GIT_WORK_TREE=", "GIT_INDEX_FILE=", "GIT_OBJECT_DIRECTORY=", "GIT_NAMESPACE="} {
+		if strings.Contains(got, gone) {
+			t.Errorf("env still has %s; the command would act on another repository", gone)
+		}
+	}
+	// Everything else the caller passed is still needed to reach the remote.
+	for _, kept := range []string{"HOME=/home/user", "GIT_SSH_COMMAND=ssh -i key", "GIT_TERMINAL_PROMPT=0"} {
+		if !strings.Contains(got, kept) {
+			t.Errorf("env = %q, want it to keep %q", got, kept)
+		}
+	}
+}

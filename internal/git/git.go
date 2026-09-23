@@ -20,10 +20,34 @@ type Client struct {
 	env    []string
 }
 
-// New returns a Client that runs git through runner with env. GIT_TERMINAL_PROMPT=0 is added, so a missing
-// credential fails instead of waiting for input that never comes.
+// repoVars name the repository a git command acts on, and they outrank the directory it runs in. A
+// caller passing its own environment through — which is the documented way to reach a remote — can be
+// running under one of these without knowing: git sets them for hooks, `git rebase --exec`, `git bisect
+// run`, and several CI checkout actions. Left in place, every command would act on that repository
+// instead of the one loomlc was pointed at.
+var repoVars = []string{
+	"GIT_DIR",
+	"GIT_WORK_TREE",
+	"GIT_INDEX_FILE",
+	"GIT_COMMON_DIR",
+	"GIT_OBJECT_DIRECTORY",
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	"GIT_NAMESPACE",
+	"GIT_PREFIX",
+	"GIT_CEILING_DIRECTORIES",
+}
+
+// New returns a Client that runs git through runner with env. Variables that would redirect a command to
+// another repository are dropped, and GIT_TERMINAL_PROMPT=0 is added so a missing credential fails
+// instead of waiting for input that never comes.
 func New(runner proc.Runner, env []string) *Client {
-	return &Client{runner: runner, env: append(slices.Clone(env), "GIT_TERMINAL_PROMPT=0")}
+	kept := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		if name, _, ok := strings.Cut(kv, "="); !ok || !slices.Contains(repoVars, name) {
+			kept = append(kept, kv)
+		}
+	}
+	return &Client{runner: runner, env: append(kept, "GIT_TERMINAL_PROMPT=0")}
 }
 
 // Error is a git command that exited unsuccessfully.
