@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -172,6 +173,14 @@ func scalarValue(m *yaml.Node, key string) string {
 
 // applyDefaults fills in values the configuration leaves out.
 func applyDefaults(c *Config) {
+	for name, s := range c.Sinks {
+		// GitHub reports associations in upper case, and that is what the sink compares against, so an
+		// operator writing "owner" means the same thing and shouldn't be told it isn't a real value.
+		for i, association := range s.Feedback.From {
+			s.Feedback.From[i] = strings.ToUpper(strings.TrimSpace(association))
+		}
+		c.Sinks[name] = s
+	}
 	for name, p := range c.Providers {
 		if p.Adapter == "" {
 			p.Adapter = name

@@ -182,6 +182,18 @@ func TestMergeAppendsStepsWithNewNames(t *testing.T) {
 	}
 }
 
+// GitHub reports associations in upper case and the sink compares against that, so an operator writing
+// them in lower case means the same thing.
+func TestParseNormalizesFeedbackAssociations(t *testing.T) {
+	cfg, err := Parse("loomlc.yml", []byte("sinks:\n  github-pr:\n    feedback:\n      from: [owner, \" Collaborator \"]\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := strings.Join(cfg.Sinks["github-pr"].Feedback.From, ","); got != "OWNER,COLLABORATOR" {
+		t.Errorf("from = %q, want OWNER,COLLABORATOR", got)
+	}
+}
+
 func TestParseRejectsMalformedFiles(t *testing.T) {
 	tests := []struct {
 		name    string

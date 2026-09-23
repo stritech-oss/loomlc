@@ -157,6 +157,10 @@ func validateSink(p *problems, name string, s Sink) {
 	})
 }
 
+// defaultFeedbackFrom are the associations a sink acts on unless it says otherwise: the preset sets the
+// same three, and this is what the message points an operator at.
+var defaultFeedbackFrom = []string{"OWNER", "MEMBER", "COLLABORATOR"}
+
 // authorAssociations are the values GitHub reports for a comment's author.
 var authorAssociations = []string{"OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "MANNEQUIN", "NONE"}
 
@@ -164,7 +168,7 @@ var authorAssociations = []string{"OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTO
 // widen or close the set, and either way nobody would notice until a run behaved oddly.
 func validateFeedbackFrom(p *problems, at string, from []string) {
 	if len(from) == 0 {
-		p.add(at, "is required; %s are the people who can change the repository themselves", strings.Join([]string{"OWNER", "MEMBER", "COLLABORATOR"}, ", "))
+		p.add(at, "is required; %s covers the owner, the organization's members, and invited collaborators", strings.Join(defaultFeedbackFrom, ", "))
 		return
 	}
 	for i, association := range from {
