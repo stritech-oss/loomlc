@@ -389,3 +389,61 @@ func TestPrepareRejectsRunIDsThatCannotFormARef(t *testing.T) {
 		})
 	}
 }
+
+// -B keeps whatever upstream the branch already had, and --no-track only declines to add one. A branch
+// left tracking the base means a bare push from the workspace can resolve to the base branch.
+func TestPrepareClearsAnUpstreamTheBranchAlreadyHad(t *testing.T) {
+	f := newFixture(t)
+	f.git(f.repo, "branch", "--track", "feat/issue-42", "origin/main")
+	if out := f.git(f.repo, "rev-parse", "--abbrev-ref", "feat/issue-42@{upstream}"); out != "origin/main" {
+		t.Fatalf("test setup: upstream = %q, want origin/main", out)
+	}
+
+	ws := f.prepare(newBranch("issue-42", "feat/issue-42"))
+
+	if _, err := git.New(proc.Exec{}, f.env).Run(context.Background(), ws.Dir, "rev-parse", "--abbrev-ref", "feat/issue-42@{upstream}"); err == nil {
+		t.Error("the branch still tracks the base; a bare push could go there")
+	}
+}
+
+// A post-checkout hook's exit status fails `worktree add`, unlike `git checkout`. The workspace is
+// complete either way, and an operator whose hook ends non-zero could never run loomlc.
+func TestPrepareIsNotFailedByTheOperatorsHooks(t *testing.T) {
+	f := newFixture(t)
+	hooks := filepath.Join(f.repo, ".git", "hooks")
+	if err := os.WriteFile(filepath.Join(hooks, "post-checkout"), []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
+		t.Fatalf("write hook: %v", err)
+	}
+
+	ws := f.prepare(newBranch("issue-42", "feat/issue-42"))
+	if out := f.git(ws.Dir, "rev-parse", "--abbrev-ref", "HEAD"); out != "feat/issue-42" {
+		t.Errorf("workspace is on %q, want feat/issue-42", out)
+	}
+}
+
+// `git fetch <remote> <branch>` only updates the remote-tracking ref when the remote's configured
+// refspec covers the branch. A --single-branch clone covers exactly one, which is what CI checkouts are.
+func TestPrepareFetchesIntoRemoteTrackingRefsInASingleBranchClone(t *testing.T) {
+	f := newFixture(t)
+	// A teammate's branch, pushed after this clone was made narrow.
+	f.git(f.repo, "checkout", "--quiet", "-b", "feat/issue-7")
+	f.commit(f.repo, "theirs.txt", "theirs\n", "feat: their work")
+	f.git(f.repo, "push", "--quiet", "origin", "feat/issue-7")
+	f.git(f.repo, "checkout", "--quiet", "main")
+
+	narrow := filepath.Join(t.TempDir(), "narrow")
+	f.git(t.TempDir(), "clone", "--quiet", "--single-branch", "--branch", "main", f.origin, narrow)
+	exec, err := New(Options{Repo: narrow, Root: ".loomlc/worktrees", Remote: "origin", Env: f.env}, proc.Exec{})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	spec := executor.Spec{Key: "issue-7", RunID: "run-1", Branch: "feat/issue-7", Base: "main", Mode: executor.ExistingBranch}
+	ws, err := exec.Prepare(context.Background(), spec)
+	if err != nil {
+		t.Fatalf("Prepare in a single-branch clone: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(ws.Dir, "theirs.txt")); err != nil {
+		t.Errorf("the workspace doesn't have the branch's latest commit: %v", err)
+	}
+}

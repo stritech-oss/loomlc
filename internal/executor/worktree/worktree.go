@@ -23,6 +23,12 @@ import (
 // maxBackupNames bounds how many names a backup ref tries before giving up.
 const maxBackupNames = 50
 
+// refspec returns an explicit refspec that puts a branch in its remote-tracking ref, whatever the
+// remote's configured refspec covers.
+func refspec(remote, branch string) string {
+	return "+refs/heads/" + branch + ":refs/remotes/" + remote + "/" + branch
+}
+
 // AttemptsRef is the ref namespace that keeps commits from earlier attempts on a branch.
 const AttemptsRef = "refs/loomlc/attempts/"
 
@@ -140,10 +146,14 @@ func (e *Executor) validate(ctx context.Context, spec executor.Spec) error {
 func (e *Executor) prepare(ctx context.Context, spec executor.Spec) (executor.Workspace, error) {
 	dir := filepath.Join(e.root, spec.Key)
 	baseRef := e.remote + "/" + spec.Base
-	start, fetch := baseRef, []string{"fetch", "--quiet", e.remote, spec.Base}
+	// Fetch into the remote-tracking refs by name. `git fetch <remote> <branch>` only updates them when
+	// the remote's configured refspec happens to cover the branch, and a --single-branch clone — what
+	// --depth implies, and what most CI checkouts are — covers exactly one. Without this the workspace
+	// starts from a ref that is stale, or missing entirely.
+	start, fetch := baseRef, []string{"fetch", "--quiet", e.remote, refspec(e.remote, spec.Base)}
 	if spec.Mode == executor.ExistingBranch {
 		start = e.remote + "/" + spec.Branch
-		fetch = append(fetch, spec.Branch)
+		fetch = append(fetch, refspec(e.remote, spec.Branch))
 	}
 
 	if _, err := e.git.Run(ctx, e.repo, fetch...); err != nil {
@@ -160,7 +170,11 @@ func (e *Executor) prepare(ctx context.Context, spec executor.Spec) (executor.Wo
 	if err := os.MkdirAll(e.root, 0o750); err != nil {
 		return executor.Workspace{}, fmt.Errorf("create workspace root: %w", err)
 	}
-	add := []string{"worktree", "add", "--quiet"}
+	// The operator's hooks don't run for a workspace loomlc creates. `worktree add` propagates a
+	// post-checkout hook's exit status, so a hook that ends non-zero — a dependency installer, a
+	// git-lfs wrapper — would fail a workspace that is in fact complete. Agents don't commit either, so
+	// no hook of the operator's is skipped that would otherwise have run.
+	add := []string{"-c", "core.hooksPath=" + os.DevNull, "worktree", "add", "--quiet"}
 	if spec.Mode == executor.NewBranch {
 		// Without tracking, a push that forgets its destination can't go to the base branch.
 		add = append(add, "--no-track")
@@ -168,6 +182,18 @@ func (e *Executor) prepare(ctx context.Context, spec executor.Spec) (executor.Wo
 	add = append(add, "-B", spec.Branch, dir, start)
 	if _, err := e.git.Run(ctx, e.repo, add...); err != nil {
 		return executor.Workspace{}, err
+	}
+	if spec.Mode == executor.NewBranch {
+		// --no-track only declines to set tracking up; it doesn't clear tracking a branch of this name
+		// already had, and -B keeps it. A branch left tracking the base means a bare `git push` from
+		// the workspace can resolve to the base branch under push.default=upstream.
+		if _, err := e.git.Run(ctx, dir, "branch", "--unset-upstream", spec.Branch); err != nil {
+			var gerr *git.Error
+			if !errors.As(err, &gerr) || gerr.ExitCode == 0 {
+				return executor.Workspace{}, err
+			}
+			// Exit status alone: there was no upstream to clear, which is the ordinary case.
+		}
 	}
 
 	baseSHA, err := e.git.Run(ctx, dir, "merge-base", baseRef, "HEAD")
