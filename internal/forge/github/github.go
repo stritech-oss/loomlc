@@ -475,7 +475,7 @@ type conversationItem struct {
 func (f *Forge) lastReply(ctx context.Context, entries []conversationItem) (time.Time, error) {
 	var last time.Time
 	if !f.opts.SinceLastReply || !slices.ContainsFunc(entries, func(e conversationItem) bool {
-		return strings.Contains(e.body, sink.ReplyMarker)
+		return isReply(e.body)
 	}) {
 		return last, nil
 	}
@@ -485,11 +485,21 @@ func (f *Forge) lastReply(ctx context.Context, entries []conversationItem) (time
 		return last, err
 	}
 	for _, e := range entries {
-		if strings.Contains(e.body, sink.ReplyMarker) && strings.EqualFold(e.item.Author, self) && e.item.CreatedAt.After(last) {
+		if isReply(e.body) && strings.EqualFold(e.item.Author, self) && e.item.CreatedAt.After(last) {
 			last = e.item.CreatedAt
 		}
 	}
 	return last, nil
+}
+
+// isReply reports whether a comment is one of loomlc's replies to review feedback.
+//
+// loomlc's replies start with the marker, so the bookmark asks for it there rather than anywhere in the
+// body. A comment that merely quotes the marker — in a sentence, or in a code block while someone
+// explains how this works — then moves nothing. The filter that keeps loomlc's own comments out of
+// feedback still looks anywhere in the body, where a false positive costs only that comment.
+func isReply(body string) bool {
+	return strings.HasPrefix(strings.TrimSpace(body), sink.ReplyMarker)
 }
 
 // self returns the login gh is authenticated as. It's asked for once, and only when something claims to

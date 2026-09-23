@@ -539,3 +539,23 @@ func TestIsBot(t *testing.T) {
 		}
 	}
 }
+
+// Quoting the marker isn't posting a reply. loomlc's own replies start with it, so a comment that
+// mentions it — in a sentence, or in a code block while someone explains the mechanism — moves nothing.
+func TestFeedbackIgnoresAQuotedReplyMarker(t *testing.T) {
+	conversation := `{"reviews":[{"id":"PRR_1","author":{"login":"maintainer"},"state":"CHANGES_REQUESTED","body":"This leaks a token in db.go.","submittedAt":"2026-09-16T09:00:00Z"}],
+	  "comments":[{"id":"IC_quote","author":{"login":"maintainer"},"body":"For reference, loomlc bookmarks its place with:\n\n    <!-- loomlc:feedback-reply run=x -->\n\nwhich is why it doesn't re-read old comments.","createdAt":"2026-09-16T11:00:00Z"}]}`
+	var fake proctest.Fake
+	fake.On(proctest.Response{Stdout: `{"login":"maintainer"}`}, "gh", "api", "user")
+	fake.On(proctest.Response{Stdout: conversation}, "gh", "pr", "view")
+	fake.On(proctest.Response{Stdout: "[[]]"}, "gh", "api", "--paginate")
+	f := newForge(t, &fake, func(o *Options) { o.SinceLastReply = true })
+
+	items, err := f.Feedback(context.Background(), sink.Ref{Sink: "github-pr", ID: "44"})
+	if err != nil {
+		t.Fatalf("Feedback: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "PRR_1" {
+		t.Errorf("items = %+v, want the review to survive a comment that only quotes the marker", items)
+	}
+}
