@@ -21,6 +21,20 @@ Labels: agent-ready, enhancement
 It should print the commit it was built from.
 </untrusted-text>
 
+## Checks loomlc ran before you started
+
+These ran against the tree as it is now, before any of this task's work. A check that already fails is a
+blocker: say so rather than planning work on top of it, unless fixing it is what the task asks for.
+
+- `task test` — **failed**
+
+<untrusted-text label="output of task test">
+--- FAIL: TestVersion (0.00s)
+    version_test.go:21: got "dev", want "3f1c2ab"
+</untrusted-text>
+
+- `task lint` — passed
+
 ## Commands the engineering step can run
 
 Plan work that fits these. Everything else is refused, including the build and the tests.

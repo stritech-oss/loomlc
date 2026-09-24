@@ -121,13 +121,20 @@ func TestRenderEscapesAnEscapeAttempt(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Render: %v", err)
 			}
-			// Exactly one block: the one the template opened, and the one it closed.
+			// Counting both ends catches text that closes a block early or opens one of its own.
 			lower := strings.ToLower(got)
-			if n := strings.Count(lower, "</"+untrustedTag+">"); n != 1 {
-				t.Errorf("prompt closes an untrusted block %d times, want 1:\n%s", n, got)
+			opens := strings.Count(lower, "<"+untrustedTag+" label=")
+			closes := strings.Count(lower, "</"+untrustedTag+">")
+			if opens != closes {
+				t.Errorf("prompt opens %d untrusted blocks and closes %d:\n%s", opens, closes, got)
 			}
-			if n := strings.Count(lower, "<"+untrustedTag+" label="); n != 1 {
-				t.Errorf("prompt opens an untrusted block %d times, want 1:\n%s", n, got)
+			// The same prompt without the attempt is the baseline.
+			clean, err := Render(Implement, OutputPlan, data())
+			if err != nil {
+				t.Fatalf("Render without the attempt: %v", err)
+			}
+			if want := strings.Count(strings.ToLower(clean), "<"+untrustedTag+" label="); opens != want {
+				t.Errorf("prompt has %d untrusted blocks, want %d: the task text opened one of its own", opens, want)
 			}
 			// The body's own tag survives only in escaped form. The counts above are what prove it
 			// can't act as a fence; this catches an escape that silently stopped happening.

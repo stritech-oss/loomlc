@@ -160,7 +160,7 @@ In Phase 0, every lifecycle has exactly three steps, in this order: a plan step,
 | `loop_with` | `qa` on engineer | On the change step: the verdict step to repeat with until it passes. |
 | `max_iter` | `5` on engineer | With `loop_with`, from 1 to 20. |
 | `timeout` | `30m`, `1h`, `30m` | More than 0 and at most `4h`. |
-| `gate` | none | Verdict step only: commands loomlc runs before the step. Any failure fails the iteration. |
+| `gate` | none | Commands loomlc runs before this step, whose results go into its prompt. Before a verdict step a failure fails the iteration and becomes the findings; before a plan step it is a blocker. |
 | `allowed_commands` | none | Commands the agent may run, for providers with a permission model. |
 
 ## What verifies the work
