@@ -53,6 +53,8 @@ loomlc passes untrusted task text to agents that hold real credentials
 ## Comments and dead code
 
 - Comments explain *why*: constraints, trade-offs, links to decisions. The code already says *what*.
+- Keep them short: one line where one line does, two when the *why* needs it. An explanation that runs
+  longer belongs in the commit message or the issue, with a pointer left behind.
 - Delete dead and commented-out code; git keeps the history.
 - Remove debug output before committing.
 - Every `TODO` names an issue: `TODO(#42): resume after an executor restart`.
