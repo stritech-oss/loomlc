@@ -155,6 +155,6 @@ type Step struct {
 	Timeout Duration `yaml:"timeout"`
 	// AllowedCommands are commands the agent may run, for providers with a permission model.
 	AllowedCommands []Command `yaml:"allowed_commands"`
-	// Gate lists commands loomlc runs before this verdict step; any failure fails the iteration.
+	// Gate lists commands loomlc runs before this step; their results go into its prompt.
 	Gate []Command `yaml:"gate"`
 }

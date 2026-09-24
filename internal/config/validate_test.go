@@ -38,7 +38,6 @@ func TestParseReportsInvalidConfiguration(t *testing.T) {
 		{name: "pi without vendor or model", yaml: "lifecycles:\n  sdlc:\n    steps:\n      - name: qa\n        provider: pi\n", wantErr: []string{"steps[2].vendor: is required for pi", "steps[2].model: is required for pi"}},
 		{name: "vendor on a claude step", yaml: "lifecycles:\n  sdlc:\n    steps:\n      - name: plan\n        vendor: anthropic\n", wantErr: []string{"steps[0].vendor: only applies to aggregator providers"}},
 		{name: "verdict step that can edit", yaml: "lifecycles:\n  sdlc:\n    steps:\n      - name: qa\n        readonly: false\n", wantErr: []string{"steps[2].readonly: must be true"}},
-		{name: "gate on the change step", yaml: "lifecycles:\n  sdlc:\n    steps:\n      - name: engineer\n        gate: [go test ./...]\n", wantErr: []string{"steps[1].gate: gates run just before a verdict step"}},
 		{name: "too many iterations", yaml: "lifecycles:\n  sdlc:\n    steps:\n      - name: engineer\n        max_iter: 50\n", wantErr: []string{"steps[1].max_iter: must be between 1 and 20, got 50"}},
 		{name: "timeout over four hours", yaml: "lifecycles:\n  sdlc:\n    steps:\n      - name: qa\n        timeout: 5h\n", wantErr: []string{"steps[2].timeout: must be more than 0 and at most 4h"}},
 		{name: "unknown role", yaml: "lifecycles:\n  sdlc:\n    steps:\n      - name: plan\n        role: architect\n", wantErr: []string{`steps[0].role: unknown role "architect"`}},
@@ -79,6 +78,20 @@ func TestBranchProblem(t *testing.T) {
 	for _, name := range invalid {
 		if branchProblem(name) == "" {
 			t.Errorf("branchProblem(%q) = \"\", want a problem", name)
+		}
+	}
+}
+
+// A gate belongs to any step, not only the one that judges the change.
+func TestGatesAreAllowedOnAnyStep(t *testing.T) {
+	yaml := "lifecycles:\n  sdlc:\n    steps:\n      - name: plan\n        gate: [\"task build\"]\n      - name: engineer\n        gate: [\"task lint\"]\n      - name: qa\n        gate: [\"task test\"]\n"
+	cfg, err := Parse("loomlc.yml", []byte(yaml))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	for _, step := range cfg.Lifecycles["sdlc"].Steps {
+		if len(step.Gate) != 1 {
+			t.Errorf("step %s has %d gates, want the one it configured", step.Name, len(step.Gate))
 		}
 	}
 }

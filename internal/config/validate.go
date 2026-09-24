@@ -258,9 +258,6 @@ func validateStep(p *problems, c *Config, at string, s Step) {
 	if d := time.Duration(s.Timeout); d <= 0 || d > maxStepTimeout {
 		p.add(at+".timeout", "must be more than 0 and at most 4h, got %s", d)
 	}
-	if len(s.Gate) > 0 && s.Output != OutputVerdict {
-		p.add(at+".gate", "gates run just before a verdict step, so only a verdict step can have them")
-	}
 	switch {
 	case s.LoopWith == "" && s.MaxIter != 0:
 		p.add(at+".max_iter", "only applies to a step with loop_with")
