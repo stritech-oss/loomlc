@@ -133,6 +133,11 @@ type Publish struct {
 	Gates []Command `yaml:"gates"`
 	// BodyGates check the pull request description before it's posted.
 	BodyGates []Command `yaml:"body_gates"`
+	// AllowUnverified lets a lifecycle run with nothing that builds or tests what it proposes. Agents
+	// can't run the build themselves, so without a gate on the verdict step or before the push, a run
+	// can open a pull request whose code was never compiled. A run refuses that unless this says
+	// otherwise, and a proposal made without checks says so.
+	AllowUnverified bool `yaml:"allow_unverified"`
 }
 
 // Step is one stage of a lifecycle, run by a provider.

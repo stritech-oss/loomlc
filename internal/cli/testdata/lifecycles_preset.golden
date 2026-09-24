@@ -6,6 +6,7 @@ sdlc
   sink      github-pr (github-pr into main, label agent-pr)
   limits    3 at a time, pause at 5 open outputs, watch every 5m
   branch    feat/issue-{{.ID}}-{{.Slug}}
+  checks    none — runs refuse until a gate is set, or publish.allow_unverified is
 
   STEP      PROVIDER  MODEL   ROLE      OUTPUT   ACCESS       LOOP            TIMEOUT
   plan      claude    sonnet  planner   plan     read-only    -               30m

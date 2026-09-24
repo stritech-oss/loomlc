@@ -48,6 +48,8 @@ func TestParseReportsInvalidConfiguration(t *testing.T) {
 		{name: "feedback without the loop", yaml: "lifecycles:\n  sdlc:\n    feedback:\n      steps: [qa]\n", wantErr: []string{"lifecycles.sdlc.feedback.steps: must be [engineer, qa]"}},
 		{name: "unknown feedback association", yaml: "sinks:\n  github-pr:\n    feedback:\n      from: [OWNER, REVIEWER]\n", wantErr: []string{"sinks.github-pr.feedback.from[1]:", `"REVIEWER" isn't a GitHub author association`}},
 		{name: "no feedback associations", yaml: "sinks:\n  github-pr:\n    feedback:\n      from: []\n", wantErr: []string{"sinks.github-pr.feedback.from: is required"}},
+		{name: "allow_unverified with gates", yaml: "lifecycles:\n  sdlc:\n    publish:\n      gates: [\"task check\"]\n      allow_unverified: true\n", wantErr: []string{"lifecycles.sdlc.publish.allow_unverified: contradicts the checks"}},
+		{name: "allow_unverified with a step gate", yaml: "lifecycles:\n  sdlc:\n    publish:\n      allow_unverified: true\n    steps:\n      - name: qa\n        gate: [\"task check\"]\n", wantErr: []string{"lifecycles.sdlc.publish.allow_unverified: contradicts the checks"}},
 		{name: "every problem at once", yaml: "version: 2\nlifecycles:\n  sdlc:\n    concurrency: 0\n", wantErr: []string{"version: must be 1", "concurrency: must be at least 1"}},
 	}
 	for _, tt := range tests {
