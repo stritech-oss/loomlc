@@ -220,6 +220,7 @@ func validateLifecycle(p *problems, c *Config, name string, lc Lifecycle) {
 		}
 		seen[s.Name] = true
 	}
+	validatePublish(p, at, lc)
 	validateShape(p, at, lc)
 }
 
@@ -304,6 +305,24 @@ func validateShape(p *problems, at string, lc Lifecycle) {
 	}
 	if want := []string{change.Name, verdict.Name}; !slices.Equal(lc.Feedback.Steps, want) {
 		p.add(at+".feedback.steps", "must be [%s, %s]: feedback runs repeat the change step and the verdict step it loops with", change.Name, verdict.Name)
+	}
+}
+
+// verified reports whether anything in the lifecycle builds or tests what a run proposes: a gate on the
+// step that judges the change, or a gate before the push.
+func verified(lc Lifecycle) bool {
+	if len(lc.Publish.Gates) > 0 {
+		return true
+	}
+	return slices.ContainsFunc(lc.Steps, func(s Step) bool { return len(s.Gate) > 0 })
+}
+
+// validatePublish checks the publish settings say something coherent. Whether a lifecycle is ready to
+// run is a question for the run itself, not for reading a file: `loomlc lifecycles` still prints a
+// configuration whose checks aren't set up yet, which is how an operator sees what to fix.
+func validatePublish(p *problems, at string, lc Lifecycle) {
+	if lc.Publish.AllowUnverified && verified(lc) {
+		p.add(at+".publish.allow_unverified", "contradicts the checks this lifecycle already has; remove one of them")
 	}
 }
 

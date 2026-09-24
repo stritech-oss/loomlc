@@ -75,3 +75,8 @@ lifecycles:
         timeout: 30m
     feedback:
       steps: [engineer, qa]
+    publish:
+      # A repository says what verifies its code: give the qa step a gate, or list commands here. Until
+      # one of them is set, a run refuses to propose work nothing has built or tested.
+      gates: []
+      allow_unverified: false

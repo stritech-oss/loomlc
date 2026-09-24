@@ -98,6 +98,7 @@ func describeLifecycles(cfg *config.Config, origin string) string {
 			{"sink", fmt.Sprintf("%s (%s into %s, label %s)", lc.Sink, sink.Type, sink.Base, sink.Label)},
 			{"limits", fmt.Sprintf("%d at a time, pause at %d open outputs, watch every %s", lc.Concurrency, lc.MaxOpenOutputs, formatDuration(time.Duration(lc.WatchInterval)))},
 			{"branch", lc.Branch},
+			{"checks", checksLabel(lc)},
 		})
 
 		rows := [][]string{{"STEP", "PROVIDER", "MODEL", "ROLE", "OUTPUT", "ACCESS", "LOOP", "TIMEOUT"}}
@@ -107,13 +108,30 @@ func describeLifecycles(cfg *config.Config, origin string) string {
 		b.WriteString("\n")
 		writeTable(&b, "  ", rows)
 
-		for _, s := range lc.Steps {
-			if len(s.Gate) > 0 {
-				fmt.Fprintf(&b, "  gates before %s: %s\n", s.Name, joinCommands(s.Gate))
-			}
-		}
 	}
 	return b.String()
+}
+
+// checksLabel says what builds or tests a run's work, because a lifecycle with nothing is the one thing
+// an operator most needs to notice in this output.
+func checksLabel(lc config.Lifecycle) string {
+	var parts []string
+	for _, s := range lc.Steps {
+		if len(s.Gate) > 0 {
+			parts = append(parts, fmt.Sprintf("before %s: %s", s.Name, joinCommands(s.Gate)))
+		}
+	}
+	if len(lc.Publish.Gates) > 0 {
+		parts = append(parts, "before push: "+joinCommands(lc.Publish.Gates))
+	}
+	switch {
+	case len(parts) > 0:
+		return strings.Join(parts, ", ")
+	case lc.Publish.AllowUnverified:
+		return "none (allow_unverified: proposals will say nothing was built or tested)"
+	default:
+		return "none — runs refuse until a gate is set, or publish.allow_unverified is"
+	}
 }
 
 // writeTable writes rows as left-aligned columns two spaces apart, each line starting with indent.

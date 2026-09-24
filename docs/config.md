@@ -140,6 +140,7 @@ The preset defines `sdlc`.
 | `steps` | plan, engineer, qa | See below. |
 | `feedback.steps` | `[engineer, qa]` | The steps a feedback run uses: the change step, then the verdict step it loops with. |
 | `publish.gates` | none | Commands that must pass before loomlc pushes. |
+| `publish.allow_unverified` | `false` | Run even though nothing builds or tests the work. See "What verifies the work" below. |
 | `publish.body_gates` | none | Commands that check the pull request description before it's posted. |
 
 ### `lifecycles.<name>.steps[]`
@@ -161,6 +162,44 @@ In Phase 0, every lifecycle has exactly three steps, in this order: a plan step,
 | `timeout` | `30m`, `1h`, `30m` | More than 0 and at most `4h`. |
 | `gate` | none | Verdict step only: commands loomlc runs before the step. Any failure fails the iteration. |
 | `allowed_commands` | none | Commands the agent may run, for providers with a permission model. |
+
+## What verifies the work
+
+Agents in this lifecycle can read the workspace and run read-only git commands. They can't run your
+build or your tests — loomlc runs those itself, between passes and before a push, from the commands you
+configure:
+
+- **`gate` on the verdict step** runs before the review step and its results go into that step's prompt,
+  so a failure comes back as findings the next pass has to address. This is the one that makes the loop
+  work.
+- **`publish.gates`** run after the loop, before the push. They're the last thing between a run and a
+  pull request.
+
+A lifecycle with neither is *unverified*: nothing between a task and a pull request ever compiles the
+code. A run refuses to start one, naming this setting, unless you say:
+
+```yaml
+lifecycles:
+  sdlc:
+    publish:
+      allow_unverified: true
+```
+
+That is a real choice, not a formality — for a repository with nothing to build, or a first experiment
+where you intend to read everything yourself. What it costs: every pull request the lifecycle opens says
+that nothing was built or tested, the review step is told the same and told not to assume otherwise, and
+`loomlc lifecycles` shows `checks none`. Setting it while gates *are* configured is refused, because one
+of the two is a mistake.
+
+The usual answer is one line:
+
+```yaml
+lifecycles:
+  sdlc:
+    steps:
+      - name: qa
+        gate: ["task check"]
+```
 
 ## Roles and prompts
 
