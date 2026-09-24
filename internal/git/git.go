@@ -68,8 +68,14 @@ func (e *Error) Error() string {
 
 // Run runs git with args in dir and returns its standard output without the trailing newline.
 func (c *Client) Run(ctx context.Context, dir string, args ...string) (string, error) {
+	return c.runWith(ctx, c.env, dir, args...)
+}
+
+// runWith runs git with env instead of the client's, for the few commands that need a variable of their
+// own.
+func (c *Client) runWith(ctx context.Context, env []string, dir string, args ...string) (string, error) {
 	var stdout, stderr bytes.Buffer
-	res, err := c.runner.Run(ctx, proc.Cmd{Name: "git", Args: args, Dir: dir, Env: c.env, Stdout: &stdout, Stderr: &stderr})
+	res, err := c.runner.Run(ctx, proc.Cmd{Name: "git", Args: args, Dir: dir, Env: env, Stdout: &stdout, Stderr: &stderr})
 	if err != nil {
 		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}
