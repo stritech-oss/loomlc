@@ -1,0 +1,17 @@
+diff --git a/config.go b/config.go
+index 9864d22..6493067 100644
+--- a/config.go
++++ b/config.go
+@@ -3,3 +3,4 @@ line two
+ line three
+ line four
+ line five
++const token = "ghp_A1b2A1b2A1b2A1b2A1b2A1b2A1b2A1b2A1b2"
+diff --git a/main.go b/main.go
+index 06ab7d0..38dd16d 100644
+--- a/main.go
++++ b/main.go
+@@ -1 +1,3 @@
+ package main
++
++func main() {}
