@@ -327,3 +327,33 @@ func TestLogReportsCommitsOldestFirst(t *testing.T) {
 		t.Errorf("Log with nothing in range = %v, %v; want none", empty, err)
 	}
 }
+
+func TestPathsSinceAndDiffReportWhatTheBranchAdds(t *testing.T) {
+	r := newRepo(t)
+	ctx := context.Background()
+	base := r.base()
+
+	r.write("a.txt", "one\n")
+	r.write("weird name.txt", "two\n")
+	if _, err := r.git.CommitPaths(ctx, r.dir, "feat: add two files", []string{"a.txt", "weird name.txt"}); err != nil {
+		t.Fatalf("CommitPaths: %v", err)
+	}
+
+	paths, err := r.git.PathsSince(ctx, r.dir, base)
+	if err != nil {
+		t.Fatalf("PathsSince: %v", err)
+	}
+	if strings.Join(paths, "|") != "a.txt|weird name.txt" {
+		t.Errorf("paths = %q, want both files with the space kept whole", paths)
+	}
+
+	patch, err := r.git.Diff(ctx, r.dir, base)
+	if err != nil {
+		t.Fatalf("Diff: %v", err)
+	}
+	for _, want := range []string{"+++ b/a.txt", "+one", "+two"} {
+		if !strings.Contains(patch, want) {
+			t.Errorf("diff doesn't contain %q:\n%s", want, patch)
+		}
+	}
+}
