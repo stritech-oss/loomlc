@@ -186,3 +186,23 @@ func short(sha string) string {
 	}
 	return sha
 }
+
+// PathsSince returns the files base..HEAD touches.
+func (c *Client) PathsSince(ctx context.Context, dir, base string) ([]string, error) {
+	out, err := c.Run(ctx, dir, "diff", "--name-only", "-z", base+"..HEAD")
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for p := range strings.SplitSeq(out, "\x00") {
+		if p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths, nil
+}
+
+// Diff returns the patch for base..HEAD, for reading what a branch adds before it is pushed.
+func (c *Client) Diff(ctx context.Context, dir, base string) (string, error) {
+	return c.Run(ctx, dir, "diff", "--no-color", "--no-ext-diff", base+"..HEAD")
+}
