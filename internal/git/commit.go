@@ -206,3 +206,11 @@ func (c *Client) PathsSince(ctx context.Context, dir, base string) ([]string, er
 func (c *Client) Diff(ctx context.Context, dir, base string) (string, error) {
 	return c.Run(ctx, dir, "diff", "--no-color", "--no-ext-diff", base+"..HEAD")
 }
+
+// Push sends a branch to a remote and sets it as the branch's upstream, so the branch a run worked on is
+// the branch a pull request is opened from. It never forces: the only thing that rewrites a pushed branch
+// is a human running tidy.
+func (c *Client) Push(ctx context.Context, dir, remote, branch string) error {
+	_, err := c.Run(ctx, dir, "push", "--set-upstream", remote, branch)
+	return err
+}
