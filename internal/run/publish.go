@@ -8,6 +8,7 @@ import (
 
 	"github.com/stritech-oss/loomlc/internal/gate"
 	"github.com/stritech-oss/loomlc/internal/git"
+	"github.com/stritech-oss/loomlc/internal/task"
 )
 
 // VCS is what publishing needs from git.
@@ -36,6 +37,8 @@ type Scanner interface {
 
 // Options configure a publish decision.
 type Options struct {
+	// Task is the task the work answers.
+	Task task.Ref
 	// Dir is the workspace, Base the commit the run's work starts after, Branch its branch.
 	Dir, Base, Branch string
 	// ProtectedPaths are paths a run may not change.
