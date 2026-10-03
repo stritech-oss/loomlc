@@ -55,6 +55,11 @@ git identity.
 Bot and agent identities are recognized by a `[bot]` suffix or a known agent email, never by name
 alone. The list is `bot_ident_re` in `scripts/commit-policy.sh`.
 
+**Running loomlc signs off its agents' commits as you.** loomlc makes every commit itself, under your git
+identity, with your sign-off — the agents it runs only edit files. So the rules above apply unchanged: the
+commits are yours, you are stating you have the right to submit them, and reviewing what a run proposed
+before you merge it is how you keep that true.
+
 ### Signing
 
 Sign your commits with a GPG or SSH key that's registered to your GitHub account and matches the
