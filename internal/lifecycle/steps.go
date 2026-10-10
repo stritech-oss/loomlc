@@ -3,6 +3,7 @@ package lifecycle
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/stritech-oss/loomlc/internal/commit"
@@ -31,7 +32,7 @@ func (r *Runner) plan(ctx context.Context, spec Spec) (prompt.Plan, []gate.Resul
 	data.Gates = promptGates(gates)
 
 	var plan prompt.Plan
-	if err := r.step(ctx, spec.Plan, prompt.Implement, data, provider.ReadOnly, &plan); err != nil {
+	if err := r.step(ctx, spec.Log, spec.Plan, prompt.Implement, data, provider.ReadOnly, &plan); err != nil {
 		return prompt.Plan{}, gates, err
 	}
 	r.say("%s: %s", spec.Plan.Name, plan.Status)
@@ -64,7 +65,7 @@ func (r *Runner) change(ctx context.Context, spec Spec, plan prompt.Plan, findin
 	data.Gates = promptGates(gates)
 
 	var change prompt.Change
-	if err := r.step(ctx, spec.Change, prompt.Implement, data, provider.WorkspaceWrite, &change); err != nil {
+	if err := r.step(ctx, spec.Log, spec.Change, prompt.Implement, data, provider.WorkspaceWrite, &change); err != nil {
 		return prompt.Change{}, nil, nil, err
 	}
 	r.say("%s: %s, %d commits proposed", spec.Change.Name, change.Status, len(change.Commits))
@@ -92,14 +93,14 @@ func (r *Runner) verdict(ctx context.Context, spec Spec, plan prompt.Plan, chang
 	data.Gates = promptGates(gates)
 
 	var verdict prompt.Verdict
-	if err := r.step(ctx, spec.Verdict, prompt.Implement, data, provider.ReadOnly, &verdict); err != nil {
+	if err := r.step(ctx, spec.Log, spec.Verdict, prompt.Implement, data, provider.ReadOnly, &verdict); err != nil {
 		return prompt.Verdict{}, err
 	}
 	return verdict, nil
 }
 
-// step renders a step's prompt, runs it, and reads its answer.
-func (r *Runner) step(ctx context.Context, step Step, mode prompt.Mode, data prompt.Data, access provider.Access, answer any) error {
+// step renders a step's prompt, runs it, records both, and reads its answer.
+func (r *Runner) step(ctx context.Context, log Recorder, step Step, mode prompt.Mode, data prompt.Data, access provider.Access, answer any) error {
 	text, err := prompt.Render(mode, step.Output, data)
 	if err != nil {
 		return err
@@ -108,7 +109,7 @@ func (r *Runner) step(ctx context.Context, step Step, mode prompt.Mode, data pro
 	if err != nil {
 		return err
 	}
-	res, err := step.Agent.Run(ctx, provider.Request{
+	res, err := r.ask(ctx, log, step, provider.Request{
 		Step:            step.Name,
 		Dir:             data.Dir,
 		RolePrompt:      step.Role,
@@ -119,11 +120,33 @@ func (r *Runner) step(ctx context.Context, step Step, mode prompt.Mode, data pro
 		AllowedCommands: step.Allowed,
 		OutputSchema:    schema,
 		Timeout:         step.Timeout,
-	})
+	}, text)
 	if err != nil {
 		return err
 	}
 	return prompt.Answer(step.Output, res.Structured, answer)
+}
+
+// ask runs a step and records what it was asked and what came back, including when it fails: a step that
+// errored is the one an operator most needs the prompt for.
+func (r *Runner) ask(ctx context.Context, log Recorder, step Step, req provider.Request, text string) (provider.Result, error) {
+	res, runErr := step.Agent.Run(ctx, req)
+	answer := string(res.Structured)
+	if runErr != nil {
+		answer = failedAnswer(runErr)
+	}
+	if log != nil {
+		if err := log.Step(step.Name, text, answer); err != nil {
+			return provider.Result{}, fmt.Errorf("record %s: %w", step.Name, err)
+		}
+	}
+	return res, runErr
+}
+
+// failedAnswer stands in for the answer a failed step never gave, so the record has a file where the
+// answer belongs and says what happened instead.
+func failedAnswer(err error) string {
+	return `{"error":` + strconv.Quote(err.Error()) + `}`
 }
 
 // check runs a step's gate, if it has one.
