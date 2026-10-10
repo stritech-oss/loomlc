@@ -348,3 +348,9 @@ func (e *Executor) checkInsideRoot(dir string) error {
 	}
 	return nil
 }
+
+// Pushed reports whether the remote already has the branch, which means an earlier run got as far as
+// pushing it.
+func (e *Executor) Pushed(ctx context.Context, branch string) (bool, error) {
+	return e.git.RemoteBranch(ctx, e.repo, e.remote, branch)
+}

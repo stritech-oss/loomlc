@@ -27,6 +27,9 @@ type Run struct {
 	Task      Task      `json:"task"`
 	Branch    string    `json:"branch"`
 	Base      string    `json:"base"`
+	// Backup is the ref holding commits an earlier attempt left on the branch, when there were any. It
+	// is the only pointer to that work once the branch has been reset.
+	Backup string `json:"backup,omitempty"`
 	// Outcome is how the lifecycle ended: proposed, blocked, or exhausted.
 	Outcome string   `json:"outcome"`
 	Passes  int      `json:"passes"`
