@@ -194,18 +194,43 @@ func (f *Forge) Get(ctx context.Context, ref task.Ref) (task.Task, error) {
 	var issue issueView
 	err = f.decode(ctx, &issue,
 		"issue", "view", n, "--repo", f.opts.Repo,
-		"--json", "number,title,body,url,labels,closed")
+		"--json", "number,title,body,url,labels,state,stateReason")
+	if err != nil {
+		return task.Task{}, fmt.Errorf("read %s: %w", ref, err)
+	}
+	state, name, err := issueState(issue)
 	if err != nil {
 		return task.Task{}, fmt.Errorf("read %s: %w", ref, err)
 	}
 	return task.Task{
-		Ref:    task.Ref{Source: f.opts.SourceName, ID: strconv.Itoa(issue.Number)},
-		Title:  bound(issue.Title, maxTitle),
-		Body:   bound(issue.Body, maxBody),
-		URL:    issue.URL,
-		Labels: labelNames(issue.Labels),
-		Closed: issue.Closed,
+		Ref:       task.Ref{Source: f.opts.SourceName, ID: strconv.Itoa(issue.Number)},
+		Title:     bound(issue.Title, maxTitle),
+		Body:      bound(issue.Body, maxBody),
+		URL:       issue.URL,
+		Labels:    labelNames(issue.Labels),
+		State:     state,
+		StateName: name,
 	}, nil
+}
+
+// issueState answers whether a run may start on an issue, keeping GitHub's own words for the refusal an
+// operator reads. A state gh doesn't report is an error, not task.Unknown: that value means "this source
+// has no notion of state", and reporting it here would start a run on an issue nobody could read.
+func issueState(issue issueView) (task.State, string, error) {
+	switch {
+	case strings.EqualFold(issue.State, "OPEN"):
+		return task.Open, "open", nil
+	case !strings.EqualFold(issue.State, "CLOSED"):
+		return 0, "", fmt.Errorf("gh reported the state %q, which is neither open nor closed", issue.State)
+	}
+	switch strings.ToUpper(issue.StateReason) {
+	case "COMPLETED":
+		return task.Finished, "closed as completed", nil
+	case "NOT_PLANNED":
+		return task.Finished, "closed as not planned", nil
+	default:
+		return task.Finished, "closed", nil
+	}
 }
 
 // Comment posts a comment on the task.
@@ -644,7 +669,10 @@ type (
 		Body   string  `json:"body"`
 		URL    string  `json:"url"`
 		Labels []label `json:"labels"`
-		Closed bool    `json:"closed"`
+		// State is OPEN or CLOSED, and StateReason says why it was closed: COMPLETED, NOT_PLANNED, or
+		// empty on an issue closed before GitHub recorded a reason.
+		State       string `json:"state"`
+		StateReason string `json:"stateReason"`
 	}
 	prItem struct {
 		Number    int     `json:"number"`

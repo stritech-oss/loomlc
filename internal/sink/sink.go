@@ -43,7 +43,9 @@ type Output struct {
 	URL    string
 	Branch string
 	Base   string
-	Open   bool
+	// Open means the output still awaits review. It stays a boolean where task.State is an enum because
+	// the polarities differ: a zero Output must not read as open (see issue #10).
+	Open bool
 	// CrossRepo means the branch lives in a fork, which loomlc can't push to.
 	CrossRepo bool
 	Labels    []string

@@ -199,11 +199,57 @@ func TestGetReadsTheTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if got.Ref.String() != "github#9" || got.Closed || !strings.HasPrefix(got.Title, "feat(cli): print") {
+	if got.Ref.String() != "github#9" || got.State != task.Open || !strings.HasPrefix(got.Title, "feat(cli): print") {
 		t.Errorf("task = %+v", got)
 	}
 	if strings.Join(got.Labels, ",") != "agent-ready,tooling" {
 		t.Errorf("labels = %q, want agent-ready,tooling", got.Labels)
+	}
+}
+
+// A run must not start on a task that is already finished, and the operator reading the refusal gets
+// GitHub's own word for why rather than loomlc's.
+func TestGetSaysWhetherARunMayStart(t *testing.T) {
+	tests := []struct {
+		state, reason string
+		want          task.State
+		wantName      string
+	}{
+		{state: "OPEN", want: task.Open, wantName: "open"},
+		{state: "CLOSED", reason: "COMPLETED", want: task.Finished, wantName: "closed as completed"},
+		{state: "CLOSED", reason: "NOT_PLANNED", want: task.Finished, wantName: "closed as not planned"},
+		{state: "CLOSED", want: task.Finished, wantName: "closed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.state+"/"+tt.reason, func(t *testing.T) {
+			view, err := json.Marshal(map[string]any{"number": 9, "state": tt.state, "stateReason": tt.reason})
+			if err != nil {
+				t.Fatalf("fixture: %v", err)
+			}
+			f := newForge(t, replying(string(view), "gh", "issue", "view"))
+
+			got, err := f.Get(context.Background(), task.Ref{Source: "github", ID: "9"})
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if got.State != tt.want || got.StateName != tt.wantName {
+				t.Errorf("state = %v (%q), want %v (%q)", got.State, got.StateName, tt.want, tt.wantName)
+			}
+			if got.State.Startable() != (tt.want != task.Finished) {
+				t.Errorf("%v.Startable() = %v", got.State, got.State.Startable())
+			}
+		})
+	}
+}
+
+// A state the adapter can't read is a refusal, not a guess: task.Unknown means a source tracks no state
+// at all, and a run may start on that.
+func TestGetRefusesAStateItCannotRead(t *testing.T) {
+	f := newForge(t, replying(`{"number":9,"state":"DRAFT"}`, "gh", "issue", "view"))
+
+	_, err := f.Get(context.Background(), task.Ref{Source: "github", ID: "9"})
+	if err == nil || !strings.Contains(err.Error(), `"DRAFT"`) {
+		t.Fatalf("error = %v, want it to name the state gh reported", err)
 	}
 }
 
@@ -212,6 +258,7 @@ func TestGetBoundsUntrustedText(t *testing.T) {
 		"number": 9,
 		"title":  strings.Repeat("é", maxTitle), // twice maxTitle in bytes
 		"body":   strings.Repeat("x", maxBody+5000),
+		"state":  "OPEN",
 	})
 	if err != nil {
 		t.Fatalf("build fixture: %v", err)
