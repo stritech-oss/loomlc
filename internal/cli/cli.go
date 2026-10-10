@@ -2,9 +2,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 
+	"github.com/stritech-oss/loomlc/internal/proc"
 	"github.com/stritech-oss/loomlc/internal/version"
 )
 
@@ -22,6 +24,13 @@ type Env struct {
 	ReadFile func(name string) ([]byte, error)
 	// LookPath finds an executable in PATH. main passes proc.Exec{}.LookPath.
 	LookPath func(name string) (string, error)
+	// Environ is the environment the tools a run starts inherit. main passes os.Environ.
+	Environ func() []string
+	// Runner runs those tools. main passes proc.Exec{}.
+	Runner proc.Runner
+	// Dir is the operator's checkout, which is where loomlc was started. main passes the working
+	// directory.
+	Dir string
 }
 
 const usage = `loomlc runs tasks through lifecycles of agent steps.
@@ -30,19 +39,23 @@ Usage:
   loomlc <command> [arguments]
 
 Commands:
+  run         run one task through a lifecycle
   lifecycles  print the lifecycles in the resolved configuration
   providers   print the configured providers and what their adapters support
   version     print the loomlc version
   help        print this help
 `
 
-// Main runs the command named by args and returns the process exit code.
-func Main(args []string, env Env) int {
+// Main runs the command named by args and returns the process exit code. Cancelling ctx stops a run and
+// lets it release what it holds.
+func Main(ctx context.Context, args []string, env Env) int {
 	if len(args) == 0 {
 		return fail(env.Stderr, usage)
 	}
 
 	switch cmd, rest := args[0], args[1:]; cmd {
+	case "run":
+		return runRun(ctx, rest, env)
 	case "lifecycles":
 		return runLifecycles(rest, env)
 	case "providers":

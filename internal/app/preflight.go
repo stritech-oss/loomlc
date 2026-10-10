@@ -28,9 +28,15 @@ func (a *App) Preflight(ctx context.Context, lc *Lifecycle) []string {
 		}
 	}
 
-	if _, err := a.git.Run(ctx, a.repo, "rev-parse", "--git-dir"); err != nil {
+	root, err := a.git.Run(ctx, a.repo, "rev-parse", "--show-toplevel")
+	if err != nil {
 		add("%s isn't a git repository: %v", a.repo, err)
 		return problems // everything below asks git about this repository
+	}
+	// A run writes its workspaces and records beside the checkout and reads its policy script from it, so
+	// started from a subdirectory it would use paths nobody meant.
+	if root != a.repo {
+		add("run loomlc from the repository's root, %s, not %s", root, a.repo)
 	}
 	remote := a.cfg.Executors[lc.Config.Executor].Remote
 	if _, err := a.git.Run(ctx, a.repo, "remote", "get-url", remote); err != nil {
