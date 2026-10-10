@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -28,6 +29,8 @@ type outputs struct {
 	change   sink.Change
 	comments []string
 	err      error
+	// warnings are what proposing reported but didn't fail over, such as a review it couldn't request.
+	warnings []string
 }
 
 func (o *outputs) Propose(_ context.Context, change sink.Change) (sink.Output, error) {
@@ -35,7 +38,7 @@ func (o *outputs) Propose(_ context.Context, change sink.Change) (sink.Output, e
 	if o.err != nil {
 		return sink.Output{}, o.err
 	}
-	return sink.Output{Ref: sink.Ref{Sink: "github-pr", ID: "45"}, URL: "https://github.com/acme/widgets/pull/45", Open: true}, nil
+	return sink.Output{Ref: sink.Ref{Sink: "github-pr", ID: "45"}, URL: "https://github.com/acme/widgets/pull/45", Open: true, Warnings: o.warnings}, nil
 }
 
 func (o *outputs) CommentOn(_ context.Context, _ sink.Ref, body string) error {
@@ -59,9 +62,19 @@ func (t *tasks) Transition(_ context.Context, _ task.Ref, status task.Status) er
 	return nil
 }
 
-type text struct{ err error }
+// text is the commit policy over what loomlc posts. bans stands in for a rule the real script has, such
+// as a link to an agent's session.
+type text struct {
+	err  error
+	bans string
+}
 
-func (t text) CheckText(context.Context, string) error { return t.err }
+func (t text) CheckText(_ context.Context, body string) error {
+	if t.bans != "" && strings.Contains(body, t.bans) {
+		return fmt.Errorf("agent attribution is not allowed: %s", t.bans)
+	}
+	return t.err
+}
 
 func passing() lifecycle.Result {
 	return lifecycle.Result{

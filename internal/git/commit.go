@@ -214,3 +214,14 @@ func (c *Client) Push(ctx context.Context, dir, remote, branch string) error {
 	_, err := c.Run(ctx, dir, "push", "--set-upstream", remote, branch)
 	return err
 }
+
+// RemoteBranch reports whether the remote already has a branch of this name. loomlc never rewrites a
+// pushed branch, so this is the difference between work it can add to and work it would have to force
+// over.
+func (c *Client) RemoteBranch(ctx context.Context, dir, remote, branch string) (bool, error) {
+	out, err := c.Run(ctx, dir, "ls-remote", "--heads", remote, "refs/heads/"+branch)
+	if err != nil {
+		return false, err
+	}
+	return out != "", nil
+}

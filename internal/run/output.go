@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/stritech-oss/loomlc/internal/commit"
+
 	"github.com/stritech-oss/loomlc/internal/lifecycle"
 	"github.com/stritech-oss/loomlc/internal/sink"
 	"github.com/stritech-oss/loomlc/internal/task"
@@ -78,9 +80,13 @@ func (o *Opener) Open(ctx context.Context, opts Options, out Output, decision De
 		return sink.Output{}, fmt.Errorf("publish %s: the run ended %s, so there is nothing to propose", opts.Branch, result.Outcome)
 	}
 
+	// The description quotes the agents. Dropping an agent's own footer costs nothing; refusing the
+	// description over it would throw away the run that produced the work.
+	description, _ := commit.Sanitize(result.Change.Summary)
+	qa, _ := commit.Sanitize(result.Verdict.Summary)
 	body, err := Body(out.Template, out.Sections, Parts{
-		Description: result.Change.Summary,
-		QA:          result.Verdict.Summary,
+		Description: description,
+		QA:          qa,
 		Issue:       closes(opts.Task),
 		Warnings:    decision.Warnings,
 	})
@@ -111,8 +117,8 @@ func (o *Opener) Open(ctx context.Context, opts Options, out Output, decision De
 
 	// Everything from here on is bookkeeping about work that already exists.
 	var problems []error
-	if err := o.outputs.CommentOn(ctx, output.Ref, sink.Marker+"summary -->\n"+Summary(result, out.Steps)); err != nil {
-		problems = append(problems, fmt.Errorf("post the summary: %w", err))
+	if err := o.summarize(ctx, output.Ref, result, out.Steps); err != nil {
+		problems = append(problems, err)
 	}
 	if err := o.tasks.Comment(ctx, opts.Task, sink.Marker+"link -->\nProposed in "+output.URL); err != nil {
 		problems = append(problems, fmt.Errorf("say where the work went: %w", err))
@@ -121,6 +127,24 @@ func (o *Opener) Open(ctx context.Context, opts Options, out Output, decision De
 		problems = append(problems, fmt.Errorf("move %s to done: %w", opts.Task, err))
 	}
 	return output, errors.Join(problems...)
+}
+
+// summarize posts how the run went. The summary quotes the agents, so it goes through the same
+// attribution rules as the description; a summary the policy still refuses isn't posted, because by now
+// the pull request exists and nothing is gained by failing the run over a comment.
+func (o *Opener) summarize(ctx context.Context, ref sink.Ref, result lifecycle.Result, steps []Step) error {
+	// Per item first, because the lists below become bullets, and the policy's rules are anchored to the
+	// start of a line.
+	result.Plan.Summary, _ = commit.Sanitize(result.Plan.Summary)
+	result.Plan.Deferred, _ = sanitizeEach(result.Plan.Deferred)
+	body, _ := commit.Sanitize(sink.Marker + "summary -->\n" + Summary(result, steps))
+	if err := o.policy.CheckText(ctx, body); err != nil {
+		return fmt.Errorf("post the summary: it doesn't pass the commit policy: %w", err)
+	}
+	if err := o.outputs.CommentOn(ctx, ref, body); err != nil {
+		return fmt.Errorf("post the summary: %w", err)
+	}
+	return nil
 }
 
 // closes links the pull request to its task, so merging closes it. A source whose tasks aren't GitHub
