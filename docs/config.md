@@ -135,7 +135,7 @@ The preset defines `sdlc`.
 | `concurrency` | `3` | How many tasks run at once. At least 1. |
 | `max_open_outputs` | `5` | New pickups pause while this many pull requests await review. At least 1. |
 | `watch_interval` | `5m` | How often `watch` looks for work. At least `30s`. |
-| `branch` | `feat/issue-{{.ID}}-{{.Slug}}` | Go template for a task's branch. It must use `{{.ID}}`, render a valid branch name, and never render the base branch. `{{.Slug}}` is the task title in lowercase, with other characters replaced by hyphens. |
+| `branch` | `feat/issue-{{.ID}}-{{.Slug}}` | Go template for a task's branch. It must use `{{.ID}}`, render a valid branch name, and never render the base branch. `{{.Slug}}` is the task title in lowercase, with runs of other characters replaced by a hyphen, cut at a whole word to 50 characters — or `task` when a title has nothing a branch name can use. |
 | `protected_paths` | `[loomlc.yml, prompts]` | Paths a run can't change without a human. |
 | `steps` | plan, engineer, qa | See below. |
 | `feedback.steps` | `[engineer, qa]` | The steps a feedback run uses: the change step, then the verdict step it loops with. |
