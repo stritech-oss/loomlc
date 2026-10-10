@@ -55,14 +55,16 @@ func cfg(t *testing.T, yaml string) *config.Config {
 }
 
 // without returns a fake where every tool but the named one is installed.
-func without(missing string) *proctest.Fake {
+// without is a machine with everything but one executable installed. The path is left unset rather than
+// empty, because an empty path is a successful lookup.
+func without(root, missing string) *proctest.Fake {
 	var fake proctest.Fake
 	for _, cmd := range []string{"git", "gh", "claude"} {
 		if cmd != missing {
 			fake.SetPath(cmd, "/usr/bin/"+cmd)
 		}
 	}
-	fake.On(proctest.Response{Stdout: ".git\n"}, "git", "rev-parse")
+	fake.On(proctest.Response{Stdout: root + "\n"}, "git", "rev-parse")
 	fake.On(proctest.Response{Stdout: "git@github.com:acme/widgets.git\n"}, "git", "remote")
 	return &fake
 }
@@ -83,12 +85,12 @@ func newApp(t *testing.T, c *config.Config, dir string, fake *proctest.Fake) *Ap
 }
 
 // ready returns a fake where every tool is installed and git answers about the repository.
-func ready() *proctest.Fake {
+func ready(root string) *proctest.Fake {
 	var fake proctest.Fake
 	for _, cmd := range []string{"git", "gh", "claude"} {
 		fake.SetPath(cmd, "/usr/bin/"+cmd)
 	}
-	fake.On(proctest.Response{Stdout: ".git\n"}, "git", "rev-parse")
+	fake.On(proctest.Response{Stdout: root + "\n"}, "git", "rev-parse")
 	fake.On(proctest.Response{Stdout: "git@github.com:acme/widgets.git\n"}, "git", "remote")
 	return &fake
 }
@@ -100,7 +102,7 @@ func TestLifecycleBuildsWhatARunNeeds(t *testing.T) {
 	}
 	writeTemplate(t, dir)
 
-	lc, err := newApp(t, cfg(t, ""), dir, ready()).Lifecycle("")
+	lc, err := newApp(t, cfg(t, ""), dir, ready(dir)).Lifecycle("")
 	if err != nil {
 		t.Fatalf("Lifecycle: %v", err)
 	}
@@ -170,7 +172,7 @@ func TestLifecycleRefusesWhatItCannotBuild(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := newApp(t, cfg(t, tt.yaml), tt.dir, ready()).Lifecycle(tt.pick)
+			_, err := newApp(t, cfg(t, tt.yaml), tt.dir, ready(tt.dir)).Lifecycle(tt.pick)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("Lifecycle = %v, want an error about %q", err, tt.want)
 			}
@@ -181,7 +183,7 @@ func TestLifecycleRefusesWhatItCannotBuild(t *testing.T) {
 // loomlc won't run without its own policy checker: it is the check that says what a run may commit.
 func TestLifecycleNeedsThePolicyScript(t *testing.T) {
 	dir := t.TempDir()
-	_, err := newApp(t, cfg(t, ""), dir, ready()).Lifecycle("")
+	_, err := newApp(t, cfg(t, ""), dir, ready(dir)).Lifecycle("")
 	if err == nil || !strings.Contains(err.Error(), "commit-policy.sh") {
 		t.Errorf("Lifecycle = %v, want it to name the missing script", err)
 	}
@@ -207,7 +209,8 @@ func TestNewRefusesOptionsItCannotUse(t *testing.T) {
 }
 
 func TestSecretsMaskTheEnvironmentItWasGiven(t *testing.T) {
-	a := newApp(t, cfg(t, ""), repo(t), ready())
+	dir := repo(t)
+	a := newApp(t, cfg(t, ""), dir, ready(dir))
 	if got := a.Secrets().String("the token is ghp-a-token-value"); strings.Contains(got, "ghp-a-token-value") {
 		t.Errorf("String = %q, want the value from the environment masked", got)
 	}

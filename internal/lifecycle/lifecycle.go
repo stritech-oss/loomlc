@@ -36,6 +36,12 @@ type Checks interface {
 	Run(ctx context.Context, dir string, commands [][]string) ([]gate.Result, error)
 }
 
+// Recorder keeps what each step was asked and what it answered. It is the only record of what an agent
+// was told, so a write that fails stops the run rather than leaving a run nobody can audit.
+type Recorder interface {
+	Step(name, prompt, answer string) error
+}
+
 // Step is one step of the lifecycle, resolved from configuration.
 type Step struct {
 	Name string
@@ -64,6 +70,8 @@ type Spec struct {
 	Plan, Change, Verdict Step
 	// MaxPasses caps the change-and-judge loop.
 	MaxPasses int
+	// Log records each step of this run. Nil records nothing.
+	Log Recorder
 	// ProtectedPaths are paths the run must not change.
 	ProtectedPaths []string
 }

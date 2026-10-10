@@ -58,6 +58,7 @@ isolation) and turns them into a small, composable engine.
 | **Sink / forge** | Adapter that emits the result (open a PR/MR, comment, write files, notify). |
 | **Gate** | Verification a step must pass (shell commands, or a provider verdict) before proceeding. |
 | **Run** | One execution of a lifecycle over one task; has persisted state for resume. |
+| **State** | What a source says about a task, in the only terms the engine acts on: `unknown` (the source tracks none), `open`, or `finished`. Only `finished` stops a run from starting. The source's own word for it travels alongside, for people to read. |
 
 ## 4. Architecture
 
@@ -262,7 +263,7 @@ lifecycles. See [`docs/examples/loomlc.yml`](./docs/examples/loomlc.yml). Highli
 
 ```
 loomlc init                 # detect stack/source, scaffold loomlc.yml + prompts + labels/statuses
-loomlc run <task-ref>       # run one task through its lifecycle (foreground)
+loomlc run <task>           # run one task through its lifecycle (foreground)
 loomlc run --all            # drain all ready tasks (concurrency + backpressure), then exit
 loomlc watch                # poll the source and drain continuously
 loomlc feedback <output>    # act on review feedback for an open output (PR/MR) — the feedback loop
@@ -270,6 +271,9 @@ loomlc resume <task|run>    # resume a blocked/failed/interrupted run, preservin
 loomlc lifecycles|providers|executors   # introspection
 loomlc doctor               # verify provider CLIs, executor, and credentials are wired up
 ```
+
+Phase 0 builds this surface one command at a time: `lifecycles`, `providers` and `run <task>` exist,
+where the task is its id within the lifecycle's source. The rest arrives with the pull requests in §8.
 
 Unattended: a `watch` daemon (systemd user unit / cron), same as strive-ui's setup — but now the work
 happens inside the configured executor's sandbox.

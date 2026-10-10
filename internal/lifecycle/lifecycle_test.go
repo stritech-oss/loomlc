@@ -417,3 +417,67 @@ func TestAChangeStepReadsItsOwnChecks(t *testing.T) {
 		t.Errorf("the change prompt doesn't carry its own checks:\n%s", engineer.prompts[0])
 	}
 }
+
+// recorder keeps what a run was asked and what it answered, in the order the steps ran.
+type recorder struct {
+	steps []string // "name: prompt -> answer"
+	err   error
+}
+
+func (r *recorder) Step(name, prompt, answer string) error {
+	r.steps = append(r.steps, fmt.Sprintf("%s: %s -> %s", name, prompt, answer))
+	return r.err
+}
+
+// The run log is the only record of what an agent was told, so every step writes one, failures included.
+func TestEveryStepIsRecorded(t *testing.T) {
+	s, _, _ := spec(
+		[]string{planReady},
+		[]string{changeDone, `{"status":"complete","summary":"Added the test.","commits":[{"message":"test(cli): cover the default","paths":["a_test.go"],"fixes":""}],"addressed":[],"blockers":[]}`},
+		[]string{verdictFail, verdictPass},
+	)
+	var log recorder
+	s.Log = &log
+	v := &vcs{changed: []string{"a.go"}, head: "origin/main"}
+
+	runWithChanges(t, s, v, &checks{}, []string{"a_test.go"})
+
+	var names []string
+	for _, step := range log.steps {
+		name, _, _ := strings.Cut(step, ":")
+		names = append(names, name)
+	}
+	if got := strings.Join(names, ","); got != "plan,engineer,qa,engineer,qa" {
+		t.Errorf("recorded steps = %s, want plan,engineer,qa,engineer,qa", got)
+	}
+	if !strings.Contains(log.steps[0], "Print the build commit") || !strings.Contains(log.steps[0], `"pr_title"`) {
+		t.Errorf("the plan step recorded:\n%s\nwant the task in the prompt and the answer beside it", log.steps[0])
+	}
+}
+
+// A step that failed is the one an operator most needs the prompt for.
+func TestAFailedStepIsRecordedWithItsError(t *testing.T) {
+	s, _, _ := spec(nil, nil, nil)
+	s.Plan.Agent = &agent{err: fmt.Errorf("claude: exit status 1")}
+	var log recorder
+	s.Log = &log
+
+	_, err := New(&vcs{head: "origin/main"}, &checks{}, nil).Implement(context.Background(), s)
+	if err == nil {
+		t.Fatal("Implement: want the step's error")
+	}
+	if len(log.steps) != 1 || !strings.Contains(log.steps[0], `{"error":"claude: exit status 1"}`) {
+		t.Errorf("recorded = %q, want the failed plan step with its error as the answer", log.steps)
+	}
+}
+
+// A run nobody can audit is worse than a run that stopped, so a log that can't be written stops it.
+func TestARunStopsWhenItCannotBeRecorded(t *testing.T) {
+	s, _, _ := spec([]string{planReady}, nil, nil)
+	s.Log = &recorder{err: fmt.Errorf("no space left on device")}
+
+	_, err := New(&vcs{head: "origin/main"}, &checks{}, nil).Implement(context.Background(), s)
+	if err == nil || !strings.Contains(err.Error(), "record plan") || !strings.Contains(err.Error(), "no space left") {
+		t.Fatalf("error = %v, want the run to stop because the plan step couldn't be recorded", err)
+	}
+}

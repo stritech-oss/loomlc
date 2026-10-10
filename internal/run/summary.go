@@ -19,8 +19,9 @@ func Summary(result lifecycle.Result, steps []Step) string {
 		fmt.Fprintf(&b, "| %s | %s | %s |\n", s.Name, s.Provider, model(s))
 	}
 
+	// The agent's own words go on their own line, where the policy's line-anchored rules can see them.
 	if summary := strings.TrimSpace(result.Plan.Summary); summary != "" {
-		fmt.Fprintf(&b, "\n**The slice.** %s\n", summary)
+		fmt.Fprintf(&b, "\n**The slice.**\n\n%s\n", summary)
 	}
 	if len(result.Plan.Deferred) > 0 {
 		b.WriteString("\n**Left for another task.**\n")

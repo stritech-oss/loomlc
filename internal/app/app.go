@@ -3,6 +3,7 @@ package app
 
 import (
 	"fmt"
+	"io"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -20,10 +21,15 @@ import (
 	"github.com/stritech-oss/loomlc/internal/provider/claude"
 	"github.com/stritech-oss/loomlc/internal/redact"
 	"github.com/stritech-oss/loomlc/internal/run"
+	"github.com/stritech-oss/loomlc/internal/runlog"
 )
 
-// policyScript is where loomlc looks for the commit policy checker in the operator's checkout.
-const policyScript = "scripts/commit-policy.sh"
+// policyScript is where loomlc looks for the commit policy checker in the operator's checkout, and
+// runRoot where it writes what each run did. Neither is configurable in Phase 0.
+const (
+	policyScript = "scripts/commit-policy.sh"
+	runRoot      = ".loomlc/runs"
+)
 
 // Options configure an App.
 type Options struct {
@@ -282,4 +288,61 @@ func names(cfg *config.Config) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// EngineOptions are what the command line decides about a run, rather than the configuration.
+type EngineOptions struct {
+	// MaxPasses caps the change-and-judge loop instead of the change step's own max_iter. Zero keeps it.
+	MaxPasses int
+	// Progress receives a line as the run goes. Nil is silent.
+	Progress io.Writer
+}
+
+// Engine returns the engine that takes one task through this lifecycle.
+func (a *App) Engine(lc *Lifecycle, opts EngineOptions) (*run.Engine, error) {
+	// Configuration validation guarantees the three steps and their order; this is the assertion, since
+	// the run indexes them.
+	if len(lc.Steps) != 3 {
+		return nil, fmt.Errorf("lifecycle %s: %d steps, want three", lc.Name, len(lc.Steps))
+	}
+	passes := lc.Config.Steps[1].MaxIter
+	if opts.MaxPasses > 0 {
+		passes = opts.MaxPasses
+	}
+
+	output := lc.Templates
+	output.Steps = lc.Summary
+	branch := lc.Config.Branch
+
+	return &run.Engine{
+		Lifecycle: lifecycle.Spec{
+			Name:           lc.Name,
+			Plan:           lc.Steps[0],
+			Change:         lc.Steps[1],
+			Verdict:        lc.Steps[2],
+			MaxPasses:      passes,
+			ProtectedPaths: lc.Config.ProtectedPaths,
+		},
+		Publishing: run.Options{
+			ProtectedPaths:  lc.Config.ProtectedPaths,
+			Gates:           argvs(lc.Config.Publish.Gates),
+			Verified:        lc.Verified,
+			AllowUnverified: lc.Config.Publish.AllowUnverified,
+		},
+		Output:     output,
+		Source:     lc.Forge,
+		Workspaces: lc.Executor,
+		Steps:      lifecycle.New(a.git, lc.Checks, opts.Progress),
+		Publisher:  run.New(a.git, lc.Checks, lc.Policy, a.Scanner(lc.Config)),
+		Opener:     run.NewOpener(a.git, lc.Forge, lc.Forge, lc.Policy),
+		Policy:     lc.Policy,
+		Branch: func(id, title string) (string, error) {
+			return config.BranchName(branch, id, title)
+		},
+		MaxOpenOutputs: lc.Config.MaxOpenOutputs,
+		NewLog: func(id string) (run.Log, error) {
+			return runlog.New(filepath.Join(a.repo, runRoot), id, a.secrets)
+		},
+		Progress: opts.Progress,
+	}, nil
 }

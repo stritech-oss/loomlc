@@ -26,7 +26,41 @@ type Task struct {
 	Body   string
 	URL    string
 	Labels []string
-	Closed bool
+	// State says whether a run may start on this task. StateName is the source's own word for it, for
+	// the message an operator reads when a run refuses; the engine never acts on it.
+	State     State
+	StateName string
+}
+
+// State is what a source says about a task, in the only terms the engine acts on: a run may start on it,
+// or must not. A source's own richer vocabulary travels in Task.StateName, for people (see issue #10).
+type State int
+
+const (
+	// Unknown means the source has no notion of state, such as a list in a file. A run may start, or
+	// such a source would never offer any work. A source that does model state answers Open or
+	// Finished, and fails rather than reporting a state it couldn't read.
+	Unknown State = iota
+	// Open means live work.
+	Open
+	// Finished means completed or abandoned, however the source words it.
+	Finished
+)
+
+// Startable reports whether a run may start on a task in this state.
+func (s State) Startable() bool { return s != Finished }
+
+func (s State) String() string {
+	switch s {
+	case Unknown:
+		return "unknown"
+	case Open:
+		return "open"
+	case Finished:
+		return "finished"
+	default:
+		return fmt.Sprintf("state %d", int(s))
+	}
 }
 
 // Status is where a task stands once a run ends.

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"io/fs"
 	"os"
@@ -41,7 +42,8 @@ func fakePath(paths map[string]string) func(string) (string, error) {
 	}
 }
 
-func run(args []string, files map[string]string) result {
+// main runs the command line as the process would, with files standing in for the checkout.
+func main(args []string, files map[string]string) result {
 	var stdout, stderr bytes.Buffer
 	env := Env{
 		Stdout:   &stdout,
@@ -49,13 +51,13 @@ func run(args []string, files map[string]string) result {
 		ReadFile: fakeFiles(files),
 		LookPath: fakePath(map[string]string{"claude": "/usr/local/bin/claude"}),
 	}
-	code := Main(args, env)
+	code := Main(context.Background(), args, env)
 	return result{code: code, stdout: stdout.String(), stderr: stderr.String()}
 }
 
 func TestProvidersPrintsInstallStateAndCapabilities(t *testing.T) {
 	files := map[string]string{"loomlc.yml": "providers:\n  fast-claude:\n    adapter: claude\n    cmd: /opt/claude-beta/claude\n"}
-	got := run([]string{"providers"}, files)
+	got := main([]string{"providers"}, files)
 	if got.code != ExitOK || got.stderr != "" {
 		t.Fatalf("exit code = %d, stderr = %q", got.code, got.stderr)
 	}
@@ -63,7 +65,7 @@ func TestProvidersPrintsInstallStateAndCapabilities(t *testing.T) {
 }
 
 func TestProvidersReportsConfigErrors(t *testing.T) {
-	got := run([]string{"providers", "--config", "missing.yml"}, nil)
+	got := main([]string{"providers", "--config", "missing.yml"}, nil)
 	if got.code != ExitFailure || !strings.Contains(got.stderr, "loomlc providers: read configuration") {
 		t.Errorf("exit code = %d, stderr = %q; want %d and a read error", got.code, got.stderr, ExitFailure)
 	}
@@ -103,7 +105,7 @@ func TestMainDispatchesCommands(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := run(tt.args, nil)
+			got := main(tt.args, nil)
 			if got.code != tt.wantCode {
 				t.Errorf("exit code = %d, want %d", got.code, tt.wantCode)
 			}
@@ -121,7 +123,7 @@ func TestMainDispatchesCommands(t *testing.T) {
 }
 
 func TestLifecyclesPrintsThePresetWithoutAConfigFile(t *testing.T) {
-	got := run([]string{"lifecycles"}, nil)
+	got := main([]string{"lifecycles"}, nil)
 	if got.code != ExitOK || got.stderr != "" {
 		t.Fatalf("exit code = %d, stderr = %q", got.code, got.stderr)
 	}
@@ -142,7 +144,7 @@ func TestLifecyclesPrintsTheMergedConfigFile(t *testing.T) {
         model: gpt-5-codex
         gate: ["go vet ./...", [go, test, -race, ./...]]
 `}
-	got := run([]string{"lifecycles"}, files)
+	got := main([]string{"lifecycles"}, files)
 	if got.code != ExitOK || got.stderr != "" {
 		t.Fatalf("exit code = %d, stderr = %q", got.code, got.stderr)
 	}
@@ -151,7 +153,7 @@ func TestLifecyclesPrintsTheMergedConfigFile(t *testing.T) {
 
 func TestLifecyclesReadsTheConfigFlag(t *testing.T) {
 	files := map[string]string{"ops/loomlc.yml": "lifecycles:\n  sdlc:\n    concurrency: 2\n"}
-	got := run([]string{"lifecycles", "--config", "ops/loomlc.yml"}, files)
+	got := main([]string{"lifecycles", "--config", "ops/loomlc.yml"}, files)
 	if got.code != ExitOK {
 		t.Fatalf("exit code = %d, stderr = %q", got.code, got.stderr)
 	}
@@ -181,7 +183,7 @@ func TestLifecyclesReportsConfigErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := run(tt.args, tt.files)
+			got := main(tt.args, tt.files)
 			if got.code != tt.wantCode {
 				t.Errorf("exit code = %d, want %d", got.code, tt.wantCode)
 			}
@@ -199,7 +201,7 @@ func TestLifecyclesReportsConfigErrors(t *testing.T) {
 func TestSubcommandHelpGoesToStdout(t *testing.T) {
 	for _, cmd := range []string{"lifecycles", "providers"} {
 		t.Run(cmd, func(t *testing.T) {
-			got := run([]string{cmd, "--help"}, nil)
+			got := main([]string{cmd, "--help"}, nil)
 			if got.code != ExitOK {
 				t.Errorf("exit code = %d, want %d", got.code, ExitOK)
 			}
@@ -214,7 +216,7 @@ func TestLifecyclesReportsUnreadableDefaultFile(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	denied := func(string) ([]byte, error) { return nil, fs.ErrPermission }
 
-	code := Main([]string{"lifecycles"}, Env{Stdout: &stdout, Stderr: &stderr, ReadFile: denied})
+	code := Main(context.Background(), []string{"lifecycles"}, Env{Stdout: &stdout, Stderr: &stderr, ReadFile: denied})
 	if code != ExitFailure || !strings.Contains(stderr.String(), "read configuration: permission denied") {
 		t.Errorf("exit code = %d, stderr = %q; want %d and a read error", code, stderr.String(), ExitFailure)
 	}
