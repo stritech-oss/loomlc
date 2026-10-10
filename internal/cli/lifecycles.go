@@ -20,6 +20,7 @@ const defaultConfigFile = "loomlc.yml"
 func runLifecycles(args []string, env Env) int {
 	flags := flag.NewFlagSet("loomlc lifecycles", flag.ContinueOnError)
 	flags.SetOutput(env.Stderr)
+	flags.Usage = func() {}
 	configPath := flags.String("config", "", "read the configuration from `path` instead of ./"+defaultConfigFile)
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -42,10 +43,13 @@ func runLifecycles(args []string, env Env) int {
 	return print(env.Stdout, describeLifecycles(cfg, origin))
 }
 
-// printUsage writes a flagset's help to w, since flag writes it wherever parse errors go.
+// printUsage writes a flagset's help to w. A command sets flags.Usage to do nothing, because flag prints
+// its own copy wherever parse errors go — which would print help that was asked for twice, once to the
+// wrong stream.
 func printUsage(w io.Writer, flags *flag.FlagSet) int {
+	_, _ = io.WriteString(w, "Usage of "+flags.Name()+":\n")
 	flags.SetOutput(w)
-	flags.Usage()
+	flags.PrintDefaults()
 	return ExitOK
 }
 
@@ -61,15 +65,17 @@ func checkConfigFlag(flags *flag.FlagSet) error {
 	return err
 }
 
-// loadConfig reads the configuration at path, or ./loomlc.yml when path is empty, and describes where it
-// came from. A missing ./loomlc.yml means the built-in preset alone; a missing explicit path is an error.
+// loadConfig reads the configuration at path, or loomlc.yml when path is empty, and describes where it
+// came from. A missing loomlc.yml means the built-in preset alone; a missing explicit path is an error.
+//
+// A relative path is read from the checkout, which is where the rest of a run's files come from too.
 func loadConfig(env Env, path string) (*config.Config, string, error) {
 	explicit := path != ""
 	if !explicit {
 		path = defaultConfigFile
 	}
 
-	data, err := env.ReadFile(path)
+	data, err := readIn(env.Dir, env.ReadFile)(path)
 	switch {
 	case err == nil:
 		cfg, err := config.Parse(path, data)

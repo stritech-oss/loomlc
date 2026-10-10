@@ -16,6 +16,7 @@ import (
 func runProviders(args []string, env Env) int {
 	flags := flag.NewFlagSet("loomlc providers", flag.ContinueOnError)
 	flags.SetOutput(env.Stderr)
+	flags.Usage = func() {}
 	configPath := flags.String("config", "", "read the configuration from `path` instead of ./"+defaultConfigFile)
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {

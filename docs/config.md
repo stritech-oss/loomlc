@@ -4,8 +4,8 @@ loomlc reads its configuration from `loomlc.yml`. This page describes the schema
 [`docs/examples/loomlc.yml`](examples/loomlc.yml) sketches where the schema is headed, including
 executors and sources that don't exist yet.
 
-Run `loomlc lifecycles` to see the configuration loomlc resolves. `loomlc lifecycles --config <path>`
-checks a file somewhere other than `./loomlc.yml`.
+Run `loomlc lifecycles` to see the configuration loomlc resolves, and `loomlc run` to take a task
+through one. Both read `./loomlc.yml` unless `--config <path>` names another file.
 
 ## How loomlc finds and merges configuration
 
@@ -90,6 +90,13 @@ local commits the remote doesn't, loomlc saves them under `refs/loomlc/attempts/
 earlier attempt's work is never lost. When a run ends, its workspace is removed, including uncommitted
 changes; the branch and its commits stay.
 
+What each run did is written to `.loomlc/runs/<run>/` in your checkout: `run.json`, and the prompt and
+answer of every step. Both directories are loomlc's own and aren't configurable beyond `root`, so add
+`.loomlc/` to your `.gitignore`.
+
+Run loomlc from the root of the checkout. Both directories, and the commit policy checker, are found
+relative to it, and a run started anywhere else refuses and says so.
+
 ### `sources.<name>`
 
 The preset defines `github`.
@@ -97,7 +104,7 @@ The preset defines `github`.
 | Key | Default | Meaning |
 |---|---|---|
 | `type` | `github` | Phase 0 has only `github`. |
-| `repo` | the checkout's repository | GitHub repository, written as `owner/name`. |
+| `repo` | none; required in Phase 0 | GitHub repository, written as `owner/name`. A run refuses until it is set: reading it from the checkout's own remote arrives with `loomlc doctor`. |
 | `trigger.label` | `agent-ready` | Label that marks a task as ready to pick up. |
 | `labels.in_progress` | `agent-in-progress` | Label on a task while a run works on it. |
 | `labels.done` | `agent-done` | Label on a task whose run opened a pull request. |
@@ -132,16 +139,16 @@ The preset defines `sdlc`.
 | Key | Default | Meaning |
 |---|---|---|
 | `executor`, `source`, `sink` | `local`, `github`, `github-pr` | Names defined in the sections above. A `github-pr` sink needs a `github` source. |
-| `concurrency` | `3` | How many tasks run at once. At least 1. |
-| `max_open_outputs` | `5` | New pickups pause while this many pull requests await review. At least 1. |
-| `watch_interval` | `5m` | How often `watch` looks for work. At least `30s`. |
-| `branch` | `feat/issue-{{.ID}}-{{.Slug}}` | Go template for a task's branch. It must use `{{.ID}}`, render a valid branch name, and never render the base branch. `{{.Slug}}` is the task title in lowercase, with runs of other characters replaced by a hyphen, cut at a whole word to 50 characters — or `task` when a title has nothing a branch name can use. |
+| `concurrency` | `3` | How many tasks run at once. At least 1. Read by the scheduler, which isn't written yet; `loomlc run` takes one task. |
+| `max_open_outputs` | `5` | New pickups pause while this many pull requests await review, counting tasks already claimed. At least 1. A named task ignores it. |
+| `watch_interval` | `5m` | How often `watch` looks for work. At least `30s`. `watch` isn't written yet. |
+| `branch` | `feat/issue-{{.ID}}-{{.Slug}}` | Go template for a task's branch. It must use `{{.ID}}`, render a valid branch name, and never render the base branch. `{{.Slug}}` is the task title in lowercase, with runs of other characters replaced by a hyphen, cut to 50 characters at the last whole word — inside a word when one word is longer than that — or `task` when a title has nothing a branch name can use. |
 | `protected_paths` | `[loomlc.yml, prompts]` | Paths a run can't change without a human. |
 | `steps` | plan, engineer, qa | See below. |
 | `feedback.steps` | `[engineer, qa]` | The steps a feedback run uses: the change step, then the verdict step it loops with. |
 | `publish.gates` | none | Commands that must pass before loomlc pushes. |
 | `publish.allow_unverified` | `false` | Run even though nothing builds or tests the work. See "What verifies the work" below. |
-| `publish.body_gates` | none | Commands that check the pull request description before it's posted. |
+| `publish.body_gates` | none | Commands that check the pull request description before it's posted. Not applied yet: loomlc's own commit policy checks the description, a repository's own checks don't run. |
 
 ### `lifecycles.<name>.steps[]`
 

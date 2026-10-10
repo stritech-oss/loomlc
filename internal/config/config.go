@@ -50,7 +50,8 @@ type Executor struct {
 type Source struct {
 	// Type is the source implementation. Phase 0 has only github.
 	Type string `yaml:"type"`
-	// Repo is the GitHub repository as owner/name. Empty means the checkout's own repository.
+	// Repo is the GitHub repository as owner/name. It is required: Phase 0 can't read it from the
+	// checkout's remote, and a run refuses rather than guessing.
 	Repo    string       `yaml:"repo"`
 	Trigger Trigger      `yaml:"trigger"`
 	Labels  SourceLabels `yaml:"labels"`

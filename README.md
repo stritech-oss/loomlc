@@ -20,8 +20,9 @@ engine** — the engineering (SDLC) flow becomes just one shipped preset.
 
 ## Status
 
-**Phase 0 in progress.** loomlc is being built in Go, starting with the `sdlc` lifecycle; only the CLI
-scaffold exists so far. See **[PLAN.md](./PLAN.md)** for the design and roadmap and
+**Phase 0 in progress.** loomlc is being built in Go, starting with the `sdlc` lifecycle. `loomlc run`
+takes one GitHub issue through it with `claude`; the scheduler, the feedback and tidy commands, and the
+other provider adapters are still to come. See **[PLAN.md](./PLAN.md)** for the design and roadmap and
 **[docs/examples/loomlc.yml](./docs/examples/loomlc.yml)** for a sample config.
 
 ## License
