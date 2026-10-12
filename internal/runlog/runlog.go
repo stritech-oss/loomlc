@@ -25,8 +25,11 @@ type Run struct {
 	StartedAt time.Time `json:"started_at"`
 	EndedAt   time.Time `json:"ended_at,omitempty"`
 	Task      Task      `json:"task"`
-	Branch    string    `json:"branch"`
-	Base      string    `json:"base"`
+	// Flow is which flow the run was: "feedback" for a run answering a review, empty for one taking a
+	// task from its queue.
+	Flow   string `json:"flow,omitempty"`
+	Branch string `json:"branch"`
+	Base   string `json:"base"`
 	// Backup is the ref holding commits an earlier attempt left on the branch, when there were any. It
 	// is the only pointer to that work once the branch has been reset.
 	Backup string `json:"backup,omitempty"`

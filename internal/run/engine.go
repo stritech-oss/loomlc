@@ -370,9 +370,14 @@ func (e *Engine) releaseClaim(ctx context.Context, ref task.Ref) {
 	e.say("%s is back in the queue", ref)
 }
 
-// cleanup returns a context for the tidying up a run does on its way out, which outlives the
-// cancellation that interrupted it: a run that was stopped still has to let go of what it holds.
 func (e *Engine) cleanup(ctx context.Context) (context.Context, context.CancelFunc) {
+	return cleanup(ctx)
+}
+
+// cleanup returns a context for the tidying up a run does on its way out, which outlives the
+// cancellation that interrupted it: a run that was stopped still has to let go of what it holds, and
+// still owes an answer wherever it was working.
+func cleanup(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), cleanupGrace)
 }
 
@@ -390,18 +395,24 @@ func workspaceKey(ref task.Ref) string {
 	return strings.ToLower(ref.Source + "-" + ref.ID)
 }
 
-func (e *Engine) now() time.Time {
-	if e.Now == nil {
+func (e *Engine) now() time.Time { return now(e.Now) }
+
+func (e *Engine) say(format string, args ...any) { say(e.Progress, format, args...) }
+
+// now reads the clock a run was given, or the real one.
+func now(clock func() time.Time) time.Time {
+	if clock == nil {
 		return time.Now()
 	}
-	return e.Now()
+	return clock()
 }
 
-func (e *Engine) say(format string, args ...any) {
-	if e.Progress == nil {
+// say writes a line for an operator watching. A nil writer is silent.
+func say(w io.Writer, format string, args ...any) {
+	if w == nil {
 		return
 	}
-	_, _ = fmt.Fprintf(e.Progress, format+"\n", args...)
+	_, _ = fmt.Fprintf(w, format+"\n", args...)
 }
 
 func (e *Engine) valid() error {

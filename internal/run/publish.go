@@ -28,6 +28,7 @@ type Checks interface {
 // agent can edit the workspace, and this is the check that says what it may commit.
 type Policy interface {
 	CheckRange(ctx context.Context, dir, base, head string) error
+	CheckRangeWithFixups(ctx context.Context, dir, base, head string) error
 }
 
 // Scanner reports credential-shaped text in a diff.
@@ -49,6 +50,10 @@ type Options struct {
 	Verified bool
 	// AllowUnverified lets an unverified lifecycle publish anyway, saying so.
 	AllowUnverified bool
+	// Revising says this work answers a review of a change that is already proposed. Its fixups are left
+	// standing for the reviewer to read, so nothing is folded, and the commit policy runs in the mode
+	// that allows them.
+	Revising bool
 }
 
 // Decision is whether a run's work can be published.
@@ -94,10 +99,13 @@ func (p *Publisher) Prepare(ctx context.Context, opts Options) (Decision, error)
 		d.Warnings = append(d.Warnings, "No checks ran: nothing built or tested this change.")
 	}
 
-	// Folding first, so every check below reads the history that will be pushed.
-	if err := p.vcs.Autosquash(ctx, opts.Dir, opts.Base); err != nil {
-		d.Refusals = append(d.Refusals, fmt.Sprintf("the fixes this run made couldn't be folded in: %v", err))
-		return d, nil
+	// Folding first, so every check below reads the history that will be pushed. A revision folds
+	// nothing: rewriting a commit the reviewer has read is a person's decision, not a run's.
+	if !opts.Revising {
+		if err := p.vcs.Autosquash(ctx, opts.Dir, opts.Base); err != nil {
+			d.Refusals = append(d.Refusals, fmt.Sprintf("the fixes this run made couldn't be folded in: %v", err))
+			return d, nil
+		}
 	}
 	commits, err := p.vcs.Log(ctx, opts.Dir, opts.Base)
 	if err != nil {
@@ -127,7 +135,11 @@ func (p *Publisher) Prepare(ctx context.Context, opts Options) (Decision, error)
 		}
 	}
 
-	if err := p.policy.CheckRange(ctx, opts.Dir, opts.Base, "HEAD"); err != nil {
+	checkRange := p.policy.CheckRange
+	if opts.Revising {
+		checkRange = p.policy.CheckRangeWithFixups
+	}
+	if err := checkRange(ctx, opts.Dir, opts.Base, "HEAD"); err != nil {
 		d.Refusals = append(d.Refusals, fmt.Sprintf("the commits don't pass the commit policy: %v", err))
 	}
 
