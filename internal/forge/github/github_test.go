@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,6 +88,7 @@ func TestRefusesAnIDThatIsNotANumber(t *testing.T) {
 				"Output":          second(f.Output(ctx, outputRef)),
 				"CommentOn":       f.CommentOn(ctx, outputRef, "hello"),
 				"Feedback":        second(f.Feedback(ctx, outputRef)),
+				"TaskFor":         third(f.TaskFor(ctx, outputRef)),
 			}
 			for name, err := range calls {
 				if err == nil {
@@ -106,6 +108,55 @@ func TestRefusesAnIDThatIsNotANumber(t *testing.T) {
 
 // second returns the error of a call that also returns a value, so a table can hold it.
 func second[T any](_ T, err error) error { return err }
+
+// third does the same for a call that also says whether it found anything.
+func third[T, U any](_ T, _ U, err error) error { return err }
+
+func TestTaskForReadsTheIssueTheOutputCloses(t *testing.T) {
+	fake := replying(`{"closingIssuesReferences":[{"number":9,"repository":{"name":"widgets","owner":{"login":"acme"}}}]}`, "gh", "pr", "view")
+	f := newForge(t, fake)
+
+	ref, ok, err := f.TaskFor(context.Background(), sink.Ref{Sink: "github-pr", ID: "44"})
+	if err != nil || !ok || ref != (task.Ref{Source: "github", ID: "9"}) {
+		t.Fatalf("TaskFor = %v, %v, %v; want github#9", ref, ok, err)
+	}
+	for _, want := range []string{"pr view 44", "--repo acme/widgets", "--json closingIssuesReferences"} {
+		if got := argv(t, fake, 0); !strings.Contains(got, want) {
+			t.Errorf("command = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+func TestTaskForPicksTheLowestOfItsOwnRepositorysIssues(t *testing.T) {
+	const mine = `{"number":%d,"repository":{"name":"widgets","owner":{"login":"ACME"}}}`
+	body := `{"closingIssuesReferences":[` + fmt.Sprintf(mine, 12) + `,` + fmt.Sprintf(mine, 9) + `]}`
+	f := newForge(t, replying(body, "gh", "pr", "view"))
+
+	ref, ok, err := f.TaskFor(context.Background(), sink.Ref{Sink: "github-pr", ID: "44"})
+	if err != nil || !ok || ref.ID != "9" {
+		t.Fatalf("TaskFor = %v, %v, %v; want the lowest, github#9", ref, ok, err)
+	}
+}
+
+// A pull request can close an issue in another repository. Reading that one would revise this change
+// against a task from somewhere else entirely.
+func TestTaskForIgnoresAnotherRepositorysIssue(t *testing.T) {
+	bodies := map[string]string{
+		"another repository": `{"closingIssuesReferences":[{"number":9,"repository":{"name":"gadgets","owner":{"login":"acme"}}}]}`,
+		"another owner":      `{"closingIssuesReferences":[{"number":9,"repository":{"name":"widgets","owner":{"login":"other"}}}]}`,
+		"nothing linked":     `{"closingIssuesReferences":[]}`,
+	}
+	for name, body := range bodies {
+		t.Run(name, func(t *testing.T) {
+			f := newForge(t, replying(body, "gh", "pr", "view"))
+
+			ref, ok, err := f.TaskFor(context.Background(), sink.Ref{Sink: "github-pr", ID: "44"})
+			if err != nil || ok {
+				t.Fatalf("TaskFor = %v, %v, %v; want no task and no error", ref, ok, err)
+			}
+		})
+	}
+}
 
 func TestNextReadyPicksTheLowestUnclaimedTask(t *testing.T) {
 	fake := replying(fixture(t, "issues_ready.json"), "gh", "issue", "list")
