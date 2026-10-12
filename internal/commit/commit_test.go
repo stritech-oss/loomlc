@@ -11,6 +11,7 @@ func branch() []Existing {
 		{SHA: "3f1c2ab9d4e5f60718293a4b5c6d7e8f90123456", Subject: "feat(version): add a build-stamped version"},
 		{SHA: "9b7d004a1b2c3d4e5f60718293a4b5c6d7e8f901", Subject: "test(version): cover the unstamped default"},
 		{SHA: "aa11bb22cc33dd44ee55ff6677889900aabbccdd", Subject: "fixup! feat(version): add a build-stamped version"},
+		{SHA: "bb22cc33dd44ee55ff6677889900aabbccddee11", Subject: "amend! feat(version): add a build-stamped version"},
 	}
 }
 
@@ -125,6 +126,13 @@ func TestCheckReportsWhatTheEngineCannotDo(t *testing.T) {
 			name:     "a fix of a fix",
 			changed:  []string{"a.go"},
 			proposed: []Proposed{{Message: "it was still wrong", Paths: []string{"a.go"}, Fixes: "aa11bb2"}},
+			want:     "itself a fix",
+		},
+		{
+			// git writes three of these prefixes and folds all three, so all three are fixes.
+			name:     "a fix of an amend",
+			changed:  []string{"a.go"},
+			proposed: []Proposed{{Message: "it was still wrong", Paths: []string{"a.go"}, Fixes: "bb22cc3"}},
 			want:     "itself a fix",
 		},
 		{

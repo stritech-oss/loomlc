@@ -322,6 +322,16 @@ func TestLogReportsCommitsOldestFirst(t *testing.T) {
 	if commits[0].Fixup() {
 		t.Error("an ordinary commit reports itself as a fixup")
 	}
+	// All three of git's prefixes are fixes waiting to be folded, and the commit policy refuses all
+	// three on a branch that is ready to merge.
+	for _, subject := range []string{"fixup! feat: add one", "squash! feat: add one", "amend! feat: add one"} {
+		if !(Commit{Subject: subject}).Fixup() {
+			t.Errorf("%q doesn't report itself as a fixup", subject)
+		}
+	}
+	if (Commit{Subject: "feat: fixup! the thing"}).Fixup() {
+		t.Error("a commit that only mentions a fixup reports itself as one")
+	}
 
 	if empty, err := r.git.Log(ctx, r.dir, "HEAD"); err != nil || empty != nil {
 		t.Errorf("Log with nothing in range = %v, %v; want none", empty, err)

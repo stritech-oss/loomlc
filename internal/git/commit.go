@@ -13,9 +13,16 @@ type Commit struct {
 	Subject string
 }
 
-// Fixup reports whether this commit is a fix waiting to be folded into another.
+// Fixup reports whether this commit is a fix waiting to be folded into another. All three of git's own
+// prefixes count, because all three are what --autosquash folds and what the commit policy refuses on a
+// branch that is ready to merge.
 func (c Commit) Fixup() bool {
-	return strings.HasPrefix(c.Subject, "fixup! ") || strings.HasPrefix(c.Subject, "squash! ")
+	for _, prefix := range []string{"fixup! ", "squash! ", "amend! "} {
+		if strings.HasPrefix(c.Subject, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // Head returns the commit the workspace is on.
