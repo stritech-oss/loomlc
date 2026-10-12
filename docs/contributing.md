@@ -39,6 +39,9 @@ an issue number:
 - Make each commit one logical change. Use the body to explain *why* when the diff doesn't show it.
 - Put issue-closing keywords (`Fixes #12`) in the pull request description, not in commits.
 - Squash `fixup!` and `squash!` commits before merging. The hook allows them locally; CI rejects them.
+  A `loomlc feedback` run pushes them on purpose, so a reviewer can see what it changed about a commit
+  they already read. The **Commit policy** check stays red until someone folds them in with
+  `git rebase -i --autosquash <base>` and pushes the result.
 
 ### Sign-off
 
@@ -97,6 +100,10 @@ repository's `.claude/settings.json` already does. The banned patterns are `bann
 scripts/commit-policy.sh range origin/main HEAD   # every commit on your branch
 scripts/commit-policy.test.sh                     # the checker's own tests
 ```
+
+There is a third mode, `range-wip`, which loomlc uses before a feedback push: the same rules, except
+that a `fixup!` header is allowed, since those commits are the point of that push. `range` is the one
+that gates a merge, so a branch stays red until the fixups are folded.
 
 ## Pull requests
 
