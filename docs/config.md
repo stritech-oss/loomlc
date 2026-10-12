@@ -4,8 +4,9 @@ loomlc reads its configuration from `loomlc.yml`. This page describes the schema
 [`docs/examples/loomlc.yml`](examples/loomlc.yml) sketches where the schema is headed, including
 executors and sources that don't exist yet.
 
-Run `loomlc lifecycles` to see the configuration loomlc resolves, and `loomlc run` to take a task
-through one. Both read `./loomlc.yml` unless `--config <path>` names another file.
+Run `loomlc lifecycles` to see the configuration loomlc resolves, `loomlc run` to take a task
+through one, and `loomlc feedback` to answer the review on a pull request a run opened. They all read
+`./loomlc.yml` unless `--config <path>` names another file.
 
 ## How loomlc finds and merges configuration
 
