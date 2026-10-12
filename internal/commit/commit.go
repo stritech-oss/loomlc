@@ -22,9 +22,15 @@ type Existing struct {
 	Subject string
 }
 
-// fix reports whether this commit is itself a fix waiting to be folded.
+// fix reports whether this commit is itself a fix waiting to be folded. All three of git's own prefixes
+// count: pointing a new fix at any of them would leave a fix of a fix, which autosquash doesn't fold.
 func (e Existing) fix() bool {
-	return strings.HasPrefix(e.Subject, "fixup! ") || strings.HasPrefix(e.Subject, "squash! ")
+	for _, prefix := range []string{"fixup! ", "squash! ", "amend! "} {
+		if strings.HasPrefix(e.Subject, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // Proposed is one commit a change step asked loomlc to make.
