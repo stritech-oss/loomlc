@@ -40,6 +40,7 @@ Usage:
 
 Commands:
   run         run one task through a lifecycle
+  feedback    answer the review on one open pull request
   lifecycles  print the lifecycles in the resolved configuration
   providers   print the configured providers and what their adapters support
   version     print the loomlc version
@@ -56,6 +57,8 @@ func Main(ctx context.Context, args []string, env Env) int {
 	switch cmd, rest := args[0], args[1:]; cmd {
 	case "run":
 		return runRun(ctx, rest, env)
+	case "feedback":
+		return runFeedback(ctx, rest, env)
 	case "lifecycles":
 		return runLifecycles(rest, env)
 	case "providers":

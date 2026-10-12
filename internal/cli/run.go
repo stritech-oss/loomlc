@@ -73,17 +73,21 @@ func runRun(ctx context.Context, args []string, env Env) int {
 		return fail(env.Stderr, "loomlc run: --max-iter must be at least 1, or left out to use the lifecycle's own limit\n")
 	}
 
-	engine, lifecycleSource, code := build(ctx, env, *configPath, *name, *maxIter)
+	a, lc, code := build(ctx, env, "run", *configPath, *name)
 	if code != ExitOK {
 		return code
 	}
-	if source != "" && source != lifecycleSource {
+	engine, err := a.Engine(lc, app.EngineOptions{MaxPasses: *maxIter, Progress: env.Stdout})
+	if err != nil {
+		return failure(env.Stderr, fmt.Sprintf("loomlc run: %v\n", err))
+	}
+	if lifecycleSource := lc.Config.Source; source != "" && source != lifecycleSource {
 		return fail(env.Stderr, fmt.Sprintf("loomlc run: this lifecycle takes its tasks from %q, not %q\n", lifecycleSource, source))
 	}
 
 	ref := task.Ref{}
 	if id != "" {
-		ref = task.Ref{Source: lifecycleSource, ID: id}
+		ref = task.Ref{Source: lc.Config.Source, ID: id}
 	}
 	report, err := engine.Run(ctx, ref)
 	// A failed write to stdout can't be reported anywhere useful, and the exit code has to describe the
@@ -98,17 +102,19 @@ func runRun(ctx context.Context, args []string, env Env) int {
 	return ExitOK
 }
 
-// build turns the configuration into the engine that runs a task, and reports what would stop it before
-// any task is claimed. It returns the source's name, because that is what a task id typed on the command
-// line belongs to.
-func build(ctx context.Context, env Env, configPath, name string, maxIter int) (*run.Engine, string, int) {
+// build loads the configuration, builds the lifecycle cmd is about to use, and reports what would stop
+// it before anything is claimed.
+func build(ctx context.Context, env Env, cmd, configPath, name string) (*app.App, *app.Lifecycle, int) {
+	fail := func(err error) int {
+		return failure(env.Stderr, fmt.Sprintf("loomlc %s: %v\n", cmd, err))
+	}
 	cfg, _, err := loadConfig(env, configPath)
 	if err != nil {
-		return nil, "", failure(env.Stderr, fmt.Sprintf("loomlc run: %v\n", err))
+		return nil, nil, fail(err)
 	}
 	dir, err := filepath.Abs(env.Dir)
 	if err != nil {
-		return nil, "", failure(env.Stderr, fmt.Sprintf("loomlc run: %v\n", err))
+		return nil, nil, fail(err)
 	}
 	a, err := app.New(app.Options{
 		Config:   cfg,
@@ -118,20 +124,16 @@ func build(ctx context.Context, env Env, configPath, name string, maxIter int) (
 		ReadFile: readIn(dir, env.ReadFile),
 	})
 	if err != nil {
-		return nil, "", failure(env.Stderr, fmt.Sprintf("loomlc run: %v\n", err))
+		return nil, nil, fail(err)
 	}
 	lc, err := a.Lifecycle(name)
 	if err != nil {
-		return nil, "", failure(env.Stderr, fmt.Sprintf("loomlc run: %v\n", err))
+		return nil, nil, fail(err)
 	}
 	if problems := a.Preflight(ctx, lc); len(problems) > 0 {
-		return nil, "", failure(env.Stderr, fmt.Sprintf("loomlc run: %s can't run yet:\n%s", lc.Name, bullets(problems)))
+		return nil, nil, failure(env.Stderr, fmt.Sprintf("loomlc %s: %s can't run yet:\n%s", cmd, lc.Name, bullets(problems)))
 	}
-	engine, err := a.Engine(lc, app.EngineOptions{MaxPasses: maxIter, Progress: env.Stdout})
-	if err != nil {
-		return nil, "", failure(env.Stderr, fmt.Sprintf("loomlc run: %v\n", err))
-	}
-	return engine, lc.Config.Source, ExitOK
+	return a, lc, ExitOK
 }
 
 // describeRun says how the run ended, after the lines it printed as it went.

@@ -272,8 +272,13 @@ loomlc lifecycles|providers|executors   # introspection
 loomlc doctor               # verify provider CLIs, executor, and credentials are wired up
 ```
 
-Phase 0 builds this surface one command at a time: `lifecycles`, `providers` and `run <task>` exist,
-where the task is its id within the lifecycle's source. The rest arrives with the pull requests in §8.
+Phase 0 builds this surface one command at a time: `lifecycles`, `providers`, `run <task>` and
+`feedback <output>` exist, where the task and the output are ids within the lifecycle's source and sink.
+The rest arrives with the pull requests in §8.
+
+A `feedback` run pushes a fix to an already-reviewed commit as a `fixup!` commit and never force-pushes,
+so the Commit policy check stays red until `loomlc tidy` folds them. Until tidy lands, that folding is
+`git rebase -i --autosquash` by hand.
 
 Unattended: a `watch` daemon (systemd user unit / cron), same as strive-ui's setup — but now the work
 happens inside the configured executor's sandbox.

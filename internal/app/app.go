@@ -298,6 +298,49 @@ type EngineOptions struct {
 	Progress io.Writer
 }
 
+// Reviser returns the reviser that answers the review on one of this lifecycle's pull requests.
+//
+// The steps are the lifecycle's own change step and the step it loops with. Configuration validation
+// ties lifecycles.<name>.feedback.steps to exactly those two, so there is one pair of steps either way;
+// a feedback run has no planning step.
+func (a *App) Reviser(lc *Lifecycle, opts EngineOptions) (*run.Reviser, error) {
+	if len(lc.Steps) != 3 {
+		return nil, fmt.Errorf("lifecycle %s: %d steps, want three", lc.Name, len(lc.Steps))
+	}
+	passes := lc.Config.Steps[1].MaxIter
+	if opts.MaxPasses > 0 {
+		passes = opts.MaxPasses
+	}
+
+	return &run.Reviser{
+		Lifecycle: lifecycle.Spec{
+			Name:           lc.Name,
+			Change:         lc.Steps[1],
+			Verdict:        lc.Steps[2],
+			MaxPasses:      passes,
+			ProtectedPaths: lc.Config.ProtectedPaths,
+		},
+		Publishing: run.Options{
+			ProtectedPaths:  lc.Config.ProtectedPaths,
+			Gates:           argvs(lc.Config.Publish.Gates),
+			Verified:        lc.Verified,
+			AllowUnverified: lc.Config.Publish.AllowUnverified,
+		},
+		Remote:     a.cfg.Executors[lc.Config.Executor].Remote,
+		Reviews:    lc.Forge,
+		Tasks:      lc.Forge,
+		Workspaces: lc.Executor,
+		Steps:      lifecycle.New(a.git, lc.Checks, opts.Progress),
+		Publisher:  run.New(a.git, lc.Checks, lc.Policy, a.Scanner(lc.Config)),
+		Push:       a.git,
+		Policy:     lc.Policy,
+		NewLog: func(id string) (run.Log, error) {
+			return runlog.New(filepath.Join(a.repo, runRoot), id, a.secrets)
+		},
+		Progress: opts.Progress,
+	}, nil
+}
+
 // Engine returns the engine that takes one task through this lifecycle.
 func (a *App) Engine(lc *Lifecycle, opts EngineOptions) (*run.Engine, error) {
 	// Configuration validation guarantees the three steps and their order; this is the assertion, since
