@@ -80,6 +80,23 @@ func TestCheckRangeRunsInTheWorkspace(t *testing.T) {
 	}
 }
 
+func TestCheckRangeWithFixupsAsksForTheWipMode(t *testing.T) {
+	var fake proctest.Fake
+	fake.On(proctest.Response{}, "bash")
+	c, err := New(script(t), &fake, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if err := c.CheckRangeWithFixups(context.Background(), "/work/pr-44", "abc1234", "HEAD"); err != nil {
+		t.Fatalf("CheckRangeWithFixups: %v", err)
+	}
+	args := strings.Join(fake.Calls()[0].Cmd.Args, " ")
+	if !strings.HasSuffix(args, "range-wip abc1234 HEAD") {
+		t.Errorf("args = %q, want the mode that allows fixups", args)
+	}
+}
+
 func TestCheckRangeReportsWhatTheScriptSaid(t *testing.T) {
 	var fake proctest.Fake
 	fake.On(proctest.Response{Stderr: `commit-policy: 1234567: missing Signed-off-by`, ExitCode: 1}, "bash")

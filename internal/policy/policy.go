@@ -47,6 +47,13 @@ func (c *Checker) CheckRange(ctx context.Context, dir, base, head string) error 
 	return c.run(ctx, dir, "range", base, head)
 }
 
+// CheckRangeWithFixups checks every commit in base..head, allowing the fixups a feedback run leaves on a
+// branch for its reviewer to read. Nothing else relaxes, and the check CI runs still refuses them, so a
+// branch stays unmergeable until a human folds them in.
+func (c *Checker) CheckRangeWithFixups(ctx context.Context, dir, base, head string) error {
+	return c.run(ctx, dir, "range-wip", base, head)
+}
+
 // CheckText checks a pull request description or comment, which the policy holds to the same rules about
 // agent attribution as a commit message.
 func (c *Checker) CheckText(ctx context.Context, body string) error {
