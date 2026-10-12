@@ -41,7 +41,7 @@ func (r *Runner) plan(ctx context.Context, spec Spec) (prompt.Plan, []gate.Resul
 
 // change runs the change step and makes the commits it asked for. It returns the commits the engine made,
 // which is empty when the answer couldn't be acted on.
-func (r *Runner) change(ctx context.Context, spec Spec, plan prompt.Plan, findings []prompt.Finding, gates []gate.Result, pass int) (prompt.Change, []git.Commit, []prompt.Finding, error) {
+func (r *Runner) change(ctx context.Context, spec Spec, mode prompt.Mode, plan prompt.Plan, findings []prompt.Finding, gates []gate.Result, pass int) (prompt.Change, []git.Commit, []prompt.Finding, error) {
 	head, err := r.vcs.Head(ctx, spec.Dir)
 	if err != nil {
 		return prompt.Change{}, nil, nil, err
@@ -65,7 +65,7 @@ func (r *Runner) change(ctx context.Context, spec Spec, plan prompt.Plan, findin
 	data.Gates = promptGates(gates)
 
 	var change prompt.Change
-	if err := r.step(ctx, spec.Log, spec.Change, prompt.Implement, data, provider.WorkspaceWrite, &change); err != nil {
+	if err := r.step(ctx, spec.Log, spec.Change, mode, data, provider.WorkspaceWrite, &change); err != nil {
 		return prompt.Change{}, nil, nil, err
 	}
 	r.say("%s: %s, %d commits proposed", spec.Change.Name, change.Status, len(change.Commits))
@@ -83,7 +83,7 @@ func (r *Runner) change(ctx context.Context, spec Spec, plan prompt.Plan, findin
 }
 
 // verdict runs the step that judges the change.
-func (r *Runner) verdict(ctx context.Context, spec Spec, plan prompt.Plan, change prompt.Change, gates []gate.Result, pass int) (prompt.Verdict, error) {
+func (r *Runner) verdict(ctx context.Context, spec Spec, mode prompt.Mode, plan prompt.Plan, change prompt.Change, gates []gate.Result, pass int) (prompt.Verdict, error) {
 	data, err := r.data(ctx, spec, spec.Verdict, pass)
 	if err != nil {
 		return prompt.Verdict{}, err
@@ -93,7 +93,7 @@ func (r *Runner) verdict(ctx context.Context, spec Spec, plan prompt.Plan, chang
 	data.Gates = promptGates(gates)
 
 	var verdict prompt.Verdict
-	if err := r.step(ctx, spec.Log, spec.Verdict, prompt.Implement, data, provider.ReadOnly, &verdict); err != nil {
+	if err := r.step(ctx, spec.Log, spec.Verdict, mode, data, provider.ReadOnly, &verdict); err != nil {
 		return prompt.Verdict{}, err
 	}
 	return verdict, nil
@@ -175,6 +175,7 @@ func (r *Runner) data(ctx context.Context, spec Spec, step Step, pass int) (prom
 		Commits:        promptCommits(commits),
 		Commands:       commands(step.Allowed),
 		ProtectedPaths: spec.ProtectedPaths,
+		Feedback:       spec.Feedback,
 	}, nil
 }
 
@@ -208,28 +209,42 @@ func (r *Runner) makeCommits(ctx context.Context, spec Spec, change prompt.Chang
 		return nil, checkFindings(problems), nil
 	}
 
-	var made []git.Commit
 	for _, c := range change.Commits {
 		message, dropped := commit.Sanitize(c.Message)
 		if len(dropped) > 0 {
 			r.say("dropped attribution from a commit message: %s", strings.Join(dropped, "; "))
 		}
-		var sha string
 		if c.Fixes != "" {
-			sha, err = r.vcs.CommitFixup(ctx, spec.Dir, c.Fixes, message, c.Paths)
+			_, err = r.vcs.CommitFixup(ctx, spec.Dir, c.Fixes, message, c.Paths)
 		} else {
-			sha, err = r.vcs.CommitPaths(ctx, spec.Dir, message, c.Paths)
+			_, err = r.vcs.CommitPaths(ctx, spec.Dir, message, c.Paths)
 		}
 		if err != nil {
-			return made, nil, fmt.Errorf("make the commits %s asked for: %w", spec.Change.Name, err)
+			return nil, nil, fmt.Errorf("make the commits %s asked for: %w", spec.Change.Name, err)
 		}
-		made = append(made, git.Commit{SHA: sha, Subject: subject(message)})
+	}
+
+	// The commits are read back rather than built from what was asked for: a fixup's subject is git's
+	// own "fixup! <target>", not the explanation that goes in its body, and the record and the reply to
+	// a reviewer both name these commits.
+	//
+	// Which ones are new is decided by SHA rather than by position, because git lists commits by date:
+	// one commit with a skewed committer date, from a machine with a bad clock or a merge from
+	// elsewhere, and a tail of the list is somebody else's commit.
+	after, err := r.vcs.Log(ctx, spec.Dir, spec.Base)
+	if err != nil {
+		return nil, nil, err
+	}
+	before := make(map[string]bool, len(existing))
+	for _, c := range existing {
+		before[c.SHA] = true
+	}
+	var made []git.Commit
+	for _, c := range after {
+		if !before[c.SHA] {
+			made = append(made, c)
+		}
 	}
 	r.say("made %d commits", len(made))
 	return made, nil, nil
-}
-
-func subject(message string) string {
-	line, _, _ := strings.Cut(message, "\n")
-	return line
 }
