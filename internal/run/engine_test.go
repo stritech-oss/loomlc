@@ -177,7 +177,7 @@ func engine(t *testing.T, edit ...func(*parts, *Engine)) (*Engine, *parts) {
 		edit(p, e)
 	}
 	e.Source, e.Workspaces, e.Steps = p.source, p.spaces, p.steps
-	e.Publisher = New(p.vcs, p.checks, policy{}, nil)
+	e.Publisher = New(p.vcs, p.checks, &policy{}, nil)
 	e.Opener = NewOpener(p.pusher, p.outputs, p.source, p.policy)
 	e.Policy = p.policy
 	e.NewLog = p.log.opened

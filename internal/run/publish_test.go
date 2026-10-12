@@ -42,9 +42,22 @@ func (c *checks) Run(_ context.Context, _ string, commands [][]string) ([]gate.R
 	return c.results, nil
 }
 
-type policy struct{ err error }
+// policy records which range check it was asked for, since a revision has to be checked in the mode
+// that allows the fixups it leaves standing.
+type policy struct {
+	err   error
+	modes []string
+}
 
-func (p policy) CheckRange(context.Context, string, string, string) error { return p.err }
+func (p *policy) CheckRange(context.Context, string, string, string) error {
+	p.modes = append(p.modes, "range")
+	return p.err
+}
+
+func (p *policy) CheckRangeWithFixups(context.Context, string, string, string) error {
+	p.modes = append(p.modes, "range-wip")
+	return p.err
+}
 
 type scanner struct{ matches []Match }
 
@@ -71,7 +84,7 @@ func work() *vcs {
 func TestWorkThatIsReadyIsPublishable(t *testing.T) {
 	v, c := work(), &checks{results: []gate.Result{{Name: "task check", Passed: true}}}
 
-	d, err := New(v, c, policy{}, nil).Prepare(context.Background(), options())
+	d, err := New(v, c, &policy{}, nil).Prepare(context.Background(), options())
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
@@ -94,7 +107,7 @@ func TestPrepareRefuses(t *testing.T) {
 		name    string
 		vcs     *vcs
 		checks  *checks
-		policy  policy
+		policy  *policy
 		scanner Scanner
 		edit    func(*Options)
 		want    string
@@ -133,7 +146,7 @@ func TestPrepareRefuses(t *testing.T) {
 		{
 			name: "the commits don't pass the policy",
 			vcs:  work(), checks: &checks{},
-			policy: policy{err: errors.New(`header is not a Conventional Commit: "Add stuff"`)},
+			policy: &policy{err: errors.New(`header is not a Conventional Commit: "Add stuff"`)},
 			want:   "don't pass the commit policy",
 		},
 		{
@@ -149,7 +162,11 @@ func TestPrepareRefuses(t *testing.T) {
 			if tt.edit != nil {
 				tt.edit(&opts)
 			}
-			d, err := New(tt.vcs, tt.checks, tt.policy, tt.scanner).Prepare(context.Background(), opts)
+			pol := tt.policy
+			if pol == nil {
+				pol = &policy{}
+			}
+			d, err := New(tt.vcs, tt.checks, pol, tt.scanner).Prepare(context.Background(), opts)
 			if err != nil {
 				t.Fatalf("Prepare: %v", err)
 			}
@@ -163,12 +180,55 @@ func TestPrepareRefuses(t *testing.T) {
 	}
 }
 
+// A revision answers a review of commits the reviewer has already read. Folding its fixes into those
+// commits would rewrite what they read, so nothing is folded and the commit policy has to be asked in
+// the mode that allows what is left standing.
+func TestARevisionFoldsNothingAndAllowsItsFixups(t *testing.T) {
+	opts := options()
+	opts.Revising = true
+	v, pol := work(), &policy{}
+
+	d, err := New(v, &checks{results: []gate.Result{{Name: "task check", Passed: true}}}, pol, nil).Prepare(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if !d.OK() {
+		t.Fatalf("refusals = %q, want none", d.Refusals)
+	}
+	if v.folded {
+		t.Error("the revision folded its fixups into commits the reviewer had read")
+	}
+	if len(pol.modes) != 1 || pol.modes[0] != "range-wip" {
+		t.Errorf("policy checks = %q, want the one that allows fixups", pol.modes)
+	}
+}
+
+// An implement run folds its own fixups first, so the commits it pushes are the logical ones, and the
+// check that refuses a leftover fixup is the one that has to run.
+func TestAnImplementRunFoldsAndRefusesLeftoverFixups(t *testing.T) {
+	v, pol := work(), &policy{}
+
+	d, err := New(v, &checks{results: []gate.Result{{Name: "task check", Passed: true}}}, pol, nil).Prepare(context.Background(), options())
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if !d.OK() {
+		t.Fatalf("refusals = %q, want none", d.Refusals)
+	}
+	if !v.folded {
+		t.Error("the run pushed without folding its own fixups")
+	}
+	if len(pol.modes) != 1 || pol.modes[0] != "range" {
+		t.Errorf("policy checks = %q, want the strict one", pol.modes)
+	}
+}
+
 // An unverified lifecycle that says so publishes, and the pull request has to say it too.
 func TestUnverifiedWorkPublishesWithAWarning(t *testing.T) {
 	opts := options()
 	opts.Verified, opts.AllowUnverified = false, true
 
-	d, err := New(work(), &checks{results: []gate.Result{{Name: "task check", Passed: true}}}, policy{}, nil).Prepare(context.Background(), opts)
+	d, err := New(work(), &checks{results: []gate.Result{{Name: "task check", Passed: true}}}, &policy{}, nil).Prepare(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
@@ -189,7 +249,7 @@ func TestPrepareReportsEveryProblemItCanSeeAtOnce(t *testing.T) {
 	c := &checks{results: []gate.Result{{Name: "task check", Passed: false, Output: "lint: 3 issues"}}}
 	s := scanner{matches: []Match{{Path: "a.go", Line: 3, Rule: "a secret from this run's own environment"}}}
 
-	d, err := New(v, c, policy{err: errors.New("not a Conventional Commit")}, s).Prepare(context.Background(), options())
+	d, err := New(v, c, &policy{err: errors.New("not a Conventional Commit")}, s).Prepare(context.Background(), options())
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
