@@ -347,6 +347,39 @@ func (f *Forge) Output(ctx context.Context, ref sink.Ref) (sink.Output, error) {
 	return out, nil
 }
 
+// TaskFor returns the task a pull request closes, which is the task a feedback run revises against. It
+// reads GitHub's own link rather than the description's text, so it says the same thing GitHub will when
+// the pull request merges.
+//
+// A reference to another repository's issue is ignored: loomlc would read the wrong repository's task,
+// and it has no business revising a change against one. When a pull request closes several of its own
+// repository's issues, the lowest-numbered one wins, so two runs make the same choice.
+func (f *Forge) TaskFor(ctx context.Context, ref sink.Ref) (task.Ref, bool, error) {
+	n, err := number(ref, ref.ID)
+	if err != nil {
+		return task.Ref{}, false, err
+	}
+	var pr prLinks
+	if err := f.decode(ctx, &pr, "pr", "view", n, "--repo", f.opts.Repo, "--json", "closingIssuesReferences"); err != nil {
+		return task.Ref{}, false, fmt.Errorf("read the task %s is for: %w", ref, err)
+	}
+
+	lowest := 0
+	for _, issue := range pr.Closes {
+		owner := issue.Repository.Owner.Login + "/" + issue.Repository.Name
+		if !strings.EqualFold(owner, f.opts.Repo) {
+			continue
+		}
+		if lowest == 0 || issue.Number < lowest {
+			lowest = issue.Number
+		}
+	}
+	if lowest == 0 {
+		return task.Ref{}, false, nil
+	}
+	return task.Ref{Source: f.opts.SourceName, ID: strconv.Itoa(lowest)}, true, nil
+}
+
 // Propose publishes a change as a pull request. When one is already open for the branch, it's reused, since
 // pushing to the branch has already updated it.
 func (f *Forge) Propose(ctx context.Context, change sink.Change) (sink.Output, error) {
@@ -687,6 +720,17 @@ type (
 		BaseRefName string  `json:"baseRefName"`
 		CrossRepo   bool    `json:"isCrossRepository"`
 		Labels      []label `json:"labels"`
+	}
+	prLinks struct {
+		Closes []struct {
+			Number     int `json:"number"`
+			Repository struct {
+				Name  string `json:"name"`
+				Owner struct {
+					Login string `json:"login"`
+				} `json:"owner"`
+			} `json:"repository"`
+		} `json:"closingIssuesReferences"`
 	}
 	prConversation struct {
 		Reviews []struct {
