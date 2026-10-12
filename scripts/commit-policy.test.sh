@@ -30,12 +30,14 @@ expect() {
   record "$2" "$1" "$got" "$out" "${5:-}"
 }
 
-# expect_range <pass|fail> <name> <base> <head> [expected error substring]
-expect_range() {
+# range_check <mode> <pass|fail> <name> <base> <head> [expected error substring]
+range_check() {
   local out got
-  out=$(cd "$work/repo" && "$policy" range "$3" "$4" 2>&1) && got=pass || got=fail
-  record "$2" "$1" "$got" "$out" "${5:-}"
+  out=$(cd "$work/repo" && "$policy" "$1" "$4" "$5" 2>&1) && got=pass || got=fail
+  record "$3" "$2" "$got" "$out" "${6:-}"
 }
+expect_range() { range_check range "$@"; }
+expect_wip() { range_check range-wip "$@"; }
 
 # --- commit messages -------------------------------------------------------------------------
 expect pass "conventional commit with sign-off" msg "feat(engine): add lifecycle runner\n\nRun steps in order.\n\n$sob\n"
@@ -102,6 +104,51 @@ g merge -q --no-ff --no-edit topic
 expect_range pass "range skips merge commits" "$base" HEAD
 g commit -q --allow-empty -m "fixup! feat(engine): add runner"
 expect_range fail "range rejects fixup commits" "$base" HEAD "squash autosquash"
+
+# --- commit ranges mid-review (loomlc feedback pushes) ---------------------------------------
+# A fixup on a pushed branch owes everything a commit owes except rule 1, which is about a header git
+# wrote. The expected text is the rule's own wording: the usage block the script prints on a bad mode
+# contains the words "agent attribution" too, so a loose match here would pass on exit 2.
+g checkout -q -b revised "$base"
+g commit -q --allow-empty -m "feat(engine): add runner" -m "$sob"
+g commit -q --allow-empty -m "fixup! feat(engine): add runner" -m "$sob"
+expect_wip pass "range-wip allows fixup commits" "$base" HEAD
+expect_range fail "range rejects what range-wip allows" "$base" HEAD "squash autosquash"
+
+g checkout -q -b long-fixup "$base"
+g commit -q --allow-empty -m "feat(engine): add runner" -m "$sob"
+g commit -q --allow-empty -m "fixup! feat(engine): $(printf 'x%.0s' $(seq 1 70))" -m "$sob"
+expect_wip pass "range-wip allows a fixup header over the limit" "$base" HEAD
+
+g checkout -q -b tainted-fixup "$base"
+g commit -q --allow-empty -m "feat(engine): add runner" -m "$sob"
+g commit -q --allow-empty -m "fixup! feat(engine): add runner" -m "$sob" -m "Co-authored-by: Someone <x@example.com>"
+expect_wip fail "range-wip rejects attribution in a fixup" "$base" HEAD "is not allowed (line"
+
+g checkout -q -b unsigned-fixup "$base"
+g commit -q --allow-empty -m "feat(engine): add runner" -m "$sob"
+g commit -q --allow-empty -m "fixup! feat(engine): add runner"
+expect_wip fail "range-wip needs a sign-off on a fixup too" "$base" HEAD "missing Signed-off-by"
+
+g checkout -q -b bot-fixup "$base"
+g commit -q --allow-empty -m "feat(engine): add runner" -m "$sob"
+g commit -q --allow-empty -m "fixup! feat(engine): add runner" -m "$bot_sob"
+expect_wip fail "range-wip needs a human sign-off on a fixup too" "$base" HEAD "a human must sign off"
+
+g checkout -q -b unsigned "$base"
+g commit -q --allow-empty -m "feat(engine): add runner"
+expect_wip fail "range-wip still needs a sign-off" "$base" HEAD "missing Signed-off-by"
+g checkout -q -b shouting "$base"
+g commit -q --allow-empty -m "Add stuff." -m "$sob"
+expect_wip fail "range-wip still needs a conventional header" "$base" HEAD "not a Conventional Commit"
+
+# A range git can't read used to report every rule as passing: a failed command substitution in the
+# word list of a `for` leaves nothing to loop over, and `set -e` never sees it.
+for mode in range range-wip; do
+  range_check "$mode" fail "$mode refuses a revision it can't read" "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" HEAD "can't list the commits"
+  range_check "$mode" fail "$mode refuses an unset base" "" HEAD "no commits to check"
+  range_check "$mode" fail "$mode refuses a range with nothing in it" HEAD HEAD "no commits to check"
+done
 
 printf '%d passed, %d failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]

@@ -4,6 +4,7 @@
 # Usage:
 #   scripts/commit-policy.sh msg <file>           check a commit message file (commit-msg hook)
 #   scripts/commit-policy.sh range <base> <head>  check every non-merge commit in base..head (CI)
+#   scripts/commit-policy.sh range-wip <b> <head> like range, but allow autosquash commits (loomlc)
 #   scripts/commit-policy.sh text <file>          check free text, e.g. a PR body, for agent attribution
 #
 # Rules:
@@ -12,6 +13,14 @@
 #   2. No Co-authored-by trailers, agent session trailers or links, or "generated with <agent>" lines.
 #   3. The commit author signs off (a Signed-off-by with the author's email).
 #   4. At least one sign-off is from a human; bot- or agent-only sign-offs are rejected.
+#
+# A fixup!, squash! or amend! header is git's own, so rule 1 can't apply to it. What else applies
+# depends on where the commit is:
+#   range      rejects it outright: autosquash commits are folded in before a branch merges.
+#   msg        allows it and asks nothing more. It is local and about to be folded into a commit that
+#              carries the sign-off itself.
+#   range-wip  allows the header and enforces rules 2, 3 and 4 anyway, because the commit is on a
+#              branch that has been pushed for somebody to read.
 #
 # Stays portable to bash 3.2 (macOS): no associative arrays or ${var,,}.
 set -euo pipefail
@@ -77,8 +86,8 @@ is_bot() { # <"Name <email>">
   grep -Eiq -- "$bot_ident_re" <<<"$1"
 }
 
-check_message() { # <message-file> <author "Name <email>"> <context> <ci: 0|1>
-  local file=$1 author=$2 ctx=$3 ci=$4
+check_message() { # <message-file> <author "Name <email>"> <context> <fixups: error|local|pushed>
+  local file=$1 author=$2 ctx=$3 fixups=$4
   local header second sobs author_email sob human=0
 
   check_banned "$file" "$ctx"
@@ -92,8 +101,15 @@ check_message() { # <message-file> <author "Name <email>"> <context> <ci: 0|1>
 
   case $header in
     'fixup! '* | 'squash! '* | 'amend! '*)
-      [ "$ci" = 0 ] || err "$ctx: squash autosquash commits before merging: \"$header\""
-      return
+      case $fixups in
+        error)
+          err "$ctx: squash autosquash commits before merging: \"$header\""
+          return
+          ;;
+        local) return ;;
+        # Rule 1 is git's business here, but the rest isn't: fall through to the sign-off checks.
+        *) ;;
+      esac
       ;;
     'Merge '*) ;; # git-generated header, but still needs a sign-off
     'Revert "'*) ;; # git-generated header, but still needs a sign-off
@@ -125,13 +141,30 @@ case ${1:-} in
   msg)
     [ $# -eq 2 ] || usage
     clean_message "$2" >"$tmp"
-    check_message "$tmp" "$(git var GIT_AUTHOR_IDENT | sed 's/ [0-9]* [-+][0-9]*$//')" "commit message" 0
+    check_message "$tmp" "$(git var GIT_AUTHOR_IDENT | sed 's/ [0-9]* [-+][0-9]*$//')" "commit message" local
     ;;
-  range)
+  range | range-wip)
     [ $# -eq 3 ] || usage
-    for commit in $(git rev-list --no-merges --reverse "$2..$3"); do
+    # range-wip is for a branch loomlc has pushed mid-review, whose fixups stay visible until a human
+    # folds them. Anything else, including a mode added later, gets the strict treatment.
+    case $1 in
+      range-wip) fixups=pushed ;;
+      *) fixups=error ;;
+    esac
+    # On its own line, so a range git can't read fails the check. In the word list of a `for`, a failed
+    # command substitution leaves no commits to loop over and `set -e` doesn't see it, which would
+    # report every rule as passing on a range nobody ever read.
+    if ! commits=$(git rev-list --no-merges --reverse "$2..$3"); then
+      err "$1: can't list the commits in $2..$3"
+      commits=""
+    # An empty range is the same silence: an unset base resolves to HEAD..HEAD, which git answers
+    # happily with nothing at all. There is nothing this check can honestly say about no commits.
+    elif [ -z "$commits" ]; then
+      err "$1: no commits to check in $2..$3"
+    fi
+    for commit in $commits; do
       git log -1 --format=%B "$commit" >"$tmp"
-      check_message "$tmp" "$(git log -1 --format='%an <%ae>' "$commit")" "$(git rev-parse --short "$commit")" 1
+      check_message "$tmp" "$(git log -1 --format='%an <%ae>' "$commit")" "$(git rev-parse --short "$commit")" "$fixups"
     done
     ;;
   text)
