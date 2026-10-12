@@ -1,5 +1,6 @@
 // Package lifecycle runs a task through its steps: plan, then a change step and the step that judges it,
-// until the judgement passes or the passes run out.
+// until the judgement passes or the passes run out. A feedback run skips the plan and revises a change
+// that was already proposed, against what a reviewer said about it.
 package lifecycle
 
 import (
@@ -13,6 +14,7 @@ import (
 	"github.com/stritech-oss/loomlc/internal/git"
 	"github.com/stritech-oss/loomlc/internal/prompt"
 	"github.com/stritech-oss/loomlc/internal/provider"
+	"github.com/stritech-oss/loomlc/internal/sink"
 	"github.com/stritech-oss/loomlc/internal/task"
 )
 
@@ -68,6 +70,9 @@ type Spec struct {
 	Dir, Branch, Base string
 	// Plan, Change and Verdict are the three steps, in the order they run.
 	Plan, Change, Verdict Step
+	// Feedback is the review feedback a Revise run answers. It is required there, and unused by
+	// Implement.
+	Feedback []sink.FeedbackItem
 	// MaxPasses caps the change-and-judge loop.
 	MaxPasses int
 	// Log records each step of this run. Nil records nothing.
@@ -110,7 +115,7 @@ type Result struct {
 	Verdict prompt.Verdict
 	// Passes is how many times the change step ran.
 	Passes int
-	// Commits are the commits the engine made, oldest first.
+	// Commits are the commits the engine made over every pass, oldest first.
 	Commits []git.Commit
 	// Gates are the results of the last checks that ran.
 	Gates []gate.Result
@@ -134,7 +139,7 @@ func New(vcs VCS, checks Checks, progress io.Writer) *Runner {
 
 // Implement takes a task from a plan to work that passed review, or says why it couldn't.
 func (r *Runner) Implement(ctx context.Context, spec Spec) (Result, error) {
-	if err := spec.valid(); err != nil {
+	if err := spec.valid(prompt.Implement); err != nil {
 		return Result{}, err
 	}
 
@@ -146,19 +151,41 @@ func (r *Runner) Implement(ctx context.Context, spec Spec) (Result, error) {
 		r.say("plan: blocked")
 		return Result{Outcome: Blocked, Plan: plan, Gates: gates, Blockers: plan.Blockers}, nil
 	}
+	return r.loop(ctx, spec, prompt.Implement, plan, gates)
+}
 
+// Revise answers review feedback on a change that is already proposed. There is no plan step: the
+// feedback is what the change step works from, and the step that judged the change judges the revision
+// against the same feedback.
+//
+// Fixes to commits the reviewer has already read become fixup commits, which stay on the branch for them
+// to read. Folding those in is a person's job, so Revise never rewrites what was pushed.
+func (r *Runner) Revise(ctx context.Context, spec Spec) (Result, error) {
+	if err := spec.valid(prompt.Feedback); err != nil {
+		return Result{}, err
+	}
+	return r.loop(ctx, spec, prompt.Feedback, prompt.Plan{}, nil)
+}
+
+// loop runs the change step and the step that judges it, until the judgement passes or the passes run
+// out. It is the same loop in both modes; what differs is where the change step takes its direction
+// from, which is the plan in an implement run and the feedback in a revision.
+func (r *Runner) loop(ctx context.Context, spec Spec, mode prompt.Mode, plan prompt.Plan, gates []gate.Result) (Result, error) {
 	result := Result{Plan: plan, Gates: gates}
 	var findings []prompt.Finding
 
 	for pass := 1; pass <= spec.MaxPasses; pass++ {
 		result.Passes = pass
 
-		change, made, problems, err := r.change(ctx, spec, plan, findings, gates, pass)
+		change, made, problems, err := r.change(ctx, spec, mode, plan, findings, gates, pass)
 		if err != nil {
 			return result, err
 		}
 		result.Change = change
-		result.Commits = made
+		// Every pass's commits, not the last pass's: a run that commits on one pass and answers in words
+		// on the next has still put work on the branch, and whatever reads this decides whether to push,
+		// what to say was pushed, and how much is left for a person to fold in.
+		result.Commits = append(result.Commits, made...)
 
 		if change.Blocked() {
 			r.say("%s: blocked on pass %d", spec.Change.Name, pass)
@@ -182,7 +209,7 @@ func (r *Runner) Implement(ctx context.Context, spec Spec) (Result, error) {
 			continue
 		}
 
-		verdict, err := r.verdict(ctx, spec, plan, change, gates, pass)
+		verdict, err := r.verdict(ctx, spec, mode, plan, change, gates, pass)
 		if err != nil {
 			return result, err
 		}
@@ -210,14 +237,19 @@ func (r *Runner) say(format string, args ...any) {
 
 var errNoAgent = errors.New("the step has no agent to run it")
 
-func (s Spec) valid() error {
+func (s Spec) valid(mode prompt.Mode) error {
 	switch {
 	case s.Dir == "" || s.Branch == "" || s.Base == "":
 		return fmt.Errorf("run %s: the workspace, branch and base are all required", s.Name)
 	case s.MaxPasses < 1:
 		return fmt.Errorf("run %s: max passes is %d", s.Name, s.MaxPasses)
-	case s.Plan.Agent == nil || s.Change.Agent == nil || s.Verdict.Agent == nil:
+	case s.Change.Agent == nil || s.Verdict.Agent == nil:
 		return fmt.Errorf("run %s: %w", s.Name, errNoAgent)
+	case mode == prompt.Implement && s.Plan.Agent == nil:
+		return fmt.Errorf("run %s: %w", s.Name, errNoAgent)
+	case mode == prompt.Feedback && len(s.Feedback) == 0:
+		// The change step would be told to answer a review and shown nothing to answer.
+		return fmt.Errorf("revise %s: there is no feedback to address", s.Name)
 	}
 	return nil
 }

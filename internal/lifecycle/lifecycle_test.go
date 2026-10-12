@@ -234,6 +234,39 @@ func (r *refillingVCS) ChangedPaths(ctx context.Context, dir string) ([]string, 
 	return r.vcs.ChangedPaths(ctx, dir)
 }
 
+// skewed is a workspace whose log doesn't put the newest commit last. git lists commits by commit date,
+// so one commit with a date from the future — a bad clock, or work merged in from elsewhere — is enough.
+type skewed struct{ *vcs }
+
+func (s *skewed) CommitPaths(ctx context.Context, dir, message string, paths []string) (string, error) {
+	sha, err := s.vcs.CommitPaths(ctx, dir, message, paths)
+	if err != nil {
+		return "", err
+	}
+	s.log = append([]git.Commit{s.log[len(s.log)-1]}, s.log[:len(s.log)-1]...)
+	return sha, nil
+}
+
+// Which commits a pass made is decided by SHA, not by where they land in the log: taking the tail would
+// report a commit from before the run and lose the one it actually made.
+func TestTheCommitsAPassMadeAreFoundBySHA(t *testing.T) {
+	s, _, _ := spec([]string{planReady}, []string{changeDone}, []string{verdictPass})
+	v := &vcs{changed: []string{"a.go"}, head: "start", log: []git.Commit{{SHA: "f00", Subject: "feat(cli): from the future"}}}
+
+	var progress strings.Builder
+	result, err := New(&skewed{vcs: v}, &checks{}, &progress).Implement(context.Background(), s)
+	if err != nil {
+		t.Fatalf("Implement: %v", err)
+	}
+
+	if len(result.Commits) != 1 {
+		t.Fatalf("result.Commits = %+v, want the one commit the pass made", result.Commits)
+	}
+	if result.Commits[0].Subject != "feat(cli): print the build commit" {
+		t.Errorf("result.Commits = %+v, want the commit this run made, not one from before it", result.Commits)
+	}
+}
+
 func TestAFailedCheckSkipsTheReviewAndComesBackAsWork(t *testing.T) {
 	secondPass := `{"status":"complete","summary":"Fixed the test.","commits":[{"message":"fix(cli): read the stamped version","paths":["a.go"],"fixes":""}],"addressed":[],"blockers":[]}`
 	s, engineer, reviewer := spec([]string{planReady}, []string{changeDone, secondPass}, []string{verdictPass})
