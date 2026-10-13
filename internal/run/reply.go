@@ -32,11 +32,8 @@ func Reply(rev Revision) string {
 		}
 	}
 
-	if rev.Pushed && len(rev.Commits) > 0 {
-		b.WriteString("\n**Pushed**\n\n")
-		for _, c := range rev.Commits {
-			fmt.Fprintf(&b, "- `%s` %s\n", short(c.SHA), oneLine(c.Subject))
-		}
+	if rev.Pushed {
+		writeCommits(&b, "Pushed", rev.Commits)
 	}
 	writeItems(&b, "What stopped it", rev.Blockers)
 	writeItems(&b, "Why it wasn't pushed", rev.Refusals)

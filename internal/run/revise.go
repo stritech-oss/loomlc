@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"slices"
 	"strings"
 	"time"
 
@@ -147,7 +146,7 @@ func (r *Reviser) Revise(ctx context.Context, want sink.Ref) (rev Revision, err 
 	}
 	// Nothing is claimed and no label is touched on a pull request loomlc has no business revising: a
 	// closed one has had its decision made, and one from a fork is somebody else's branch.
-	if reason := unrevisable(out); reason != "" {
+	if reason := unwritable(out, "revise"); reason != "" {
 		r.say("%s: %s", ref, reason)
 		return Revision{Output: ref, URL: out.URL, Idle: ref.String() + " " + reason}, nil
 	}
@@ -345,11 +344,12 @@ func (r *Reviser) pick(ctx context.Context, want sink.Ref) (sink.Ref, string, er
 	return ref, "", nil
 }
 
-// unrevisable says why a pull request can't be revised, or "" when it can.
-func unrevisable(out sink.Output) string {
+// unwritable says why loomlc can't put commits on a pull request's branch, or "" when it can. work names
+// what is being refused, which is all that differs between revising a change and folding one.
+func unwritable(out sink.Output, work string) string {
 	switch {
 	case !out.Open:
-		return "is closed, so there is nothing to revise"
+		return "is closed, so there is nothing to " + work
 	case out.CrossRepo:
 		return "comes from a fork, and loomlc can't push to somebody else's branch"
 	case out.Branch == "":
@@ -388,11 +388,9 @@ func (r *Reviser) reply(ctx context.Context, rev Revision) error {
 	}
 	// A commit subject is quoted too, and a fixup's is git's own prefix in front of whatever the commit
 	// it names was called — on a branch with other people's commits, that is any text at all.
-	rev.Commits = slices.Clone(rev.Commits)
-	for i, c := range rev.Commits {
-		clean, gone := sanitizeSubject(c.Subject)
-		rev.Commits[i].Subject, dropped = clean, append(dropped, gone...)
-	}
+	var gone []string
+	rev.Commits, gone = sanitizeCommits(rev.Commits)
+	dropped = append(dropped, gone...)
 	if len(dropped) > 0 {
 		r.say("dropped attribution from the reply: %s", strings.Join(dropped, "; "))
 	}
@@ -497,7 +495,7 @@ func sanitizeAddressed(items []prompt.Addressed) ([]prompt.Addressed, []string) 
 }
 
 func (r *Reviser) runID(ref sink.Ref) string {
-	return r.now().UTC().Format("20060102-150405.000") + "-" + strings.ToLower(ref.Sink+"-"+ref.ID)
+	return r.now().UTC().Format("20060102-150405.000") + "-" + outputKey(ref)
 }
 
 func (r *Reviser) now() time.Time { return now(r.Now) }

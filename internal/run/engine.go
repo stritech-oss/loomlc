@@ -187,7 +187,7 @@ func (e *Engine) attempt(ctx context.Context, t task.Task, log Log, record *runl
 	if err != nil {
 		return err
 	}
-	// loomlc never force-pushes, so a branch the remote already has is one it can't rewrite: an earlier
+	// A run never force-pushes, so a branch the remote already has is one it can't rewrite: an earlier
 	// run pushed it and then couldn't open or reuse a pull request for it. Starting over would reset the
 	// branch locally and then fail the push on every attempt, so this stops here and asks for a person.
 	pushed, err := e.Workspaces.Pushed(ctx, branch)
