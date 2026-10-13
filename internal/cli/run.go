@@ -73,7 +73,7 @@ func runRun(ctx context.Context, args []string, env Env) int {
 		return fail(env.Stderr, "loomlc run: --max-iter must be at least 1, or left out to use the lifecycle's own limit\n")
 	}
 
-	a, lc, code := build(ctx, env, "run", *configPath, *name)
+	a, lc, code := build(ctx, env, "run", *configPath, *name, app.RunsAgents)
 	if code != ExitOK {
 		return code
 	}
@@ -103,8 +103,9 @@ func runRun(ctx context.Context, args []string, env Env) int {
 }
 
 // build loads the configuration, builds the lifecycle cmd is about to use, and reports what would stop
-// it before anything is claimed.
-func build(ctx context.Context, env Env, cmd, configPath, name string) (*app.App, *app.Lifecycle, int) {
+// it before anything is claimed. needs says how much of the machine cmd uses, since a command that runs
+// no agent isn't stopped by a provider that isn't installed.
+func build(ctx context.Context, env Env, cmd, configPath, name string, needs app.Needs) (*app.App, *app.Lifecycle, int) {
 	fail := func(err error) int {
 		return failure(env.Stderr, fmt.Sprintf("loomlc %s: %v\n", cmd, err))
 	}
@@ -130,7 +131,7 @@ func build(ctx context.Context, env Env, cmd, configPath, name string) (*app.App
 	if err != nil {
 		return nil, nil, fail(err)
 	}
-	if problems := a.Preflight(ctx, lc); len(problems) > 0 {
+	if problems := a.Preflight(ctx, lc, needs); len(problems) > 0 {
 		return nil, nil, failure(env.Stderr, fmt.Sprintf("loomlc %s: %s can't run yet:\n%s", cmd, lc.Name, bullets(problems)))
 	}
 	return a, lc, ExitOK

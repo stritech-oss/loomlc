@@ -41,6 +41,7 @@ Usage:
 Commands:
   run         run one task through a lifecycle
   feedback    answer the review on one open pull request
+  tidy        fold a pull request's fixup commits before merging it
   lifecycles  print the lifecycles in the resolved configuration
   providers   print the configured providers and what their adapters support
   version     print the loomlc version
@@ -59,6 +60,8 @@ func Main(ctx context.Context, args []string, env Env) int {
 		return runRun(ctx, rest, env)
 	case "feedback":
 		return runFeedback(ctx, rest, env)
+	case "tidy":
+		return runTidy(ctx, rest, env)
 	case "lifecycles":
 		return runLifecycles(rest, env)
 	case "providers":
