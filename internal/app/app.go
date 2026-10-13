@@ -341,6 +341,23 @@ func (a *App) Reviser(lc *Lifecycle, opts EngineOptions) (*run.Reviser, error) {
 	}, nil
 }
 
+// Tidier returns the tidier that folds the fixup commits on one of this lifecycle's pull requests.
+//
+// It takes no lifecycle steps: folding runs no agent and judges nothing, so there is no provider to
+// build and no pass limit to cap.
+func (a *App) Tidier(lc *Lifecycle, progress io.Writer) *run.Tidier {
+	return &run.Tidier{
+		Lifecycle:  lc.Name,
+		Remote:     a.cfg.Executors[lc.Config.Executor].Remote,
+		Outputs:    lc.Forge,
+		Workspaces: lc.Executor,
+		VCS:        a.git,
+		Policy:     lc.Policy,
+		Text:       lc.Policy,
+		Progress:   progress,
+	}
+}
+
 // Engine returns the engine that takes one task through this lifecycle.
 func (a *App) Engine(lc *Lifecycle, opts EngineOptions) (*run.Engine, error) {
 	// Configuration validation guarantees the three steps and their order; this is the assertion, since

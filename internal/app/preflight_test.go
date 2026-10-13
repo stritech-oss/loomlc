@@ -18,7 +18,7 @@ func TestPreflightPassesWhenEverythingIsThere(t *testing.T) {
 		t.Fatalf("Lifecycle: %v", err)
 	}
 
-	if problems := a.Preflight(context.Background(), lc); len(problems) != 0 {
+	if problems := a.Preflight(context.Background(), lc, RunsAgents); len(problems) != 0 {
 		t.Errorf("problems = %q, want none", problems)
 	}
 }
@@ -81,7 +81,7 @@ func TestPreflightReportsWhatStopsARun(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Lifecycle: %v", err)
 			}
-			problems := a.Preflight(context.Background(), lc)
+			problems := a.Preflight(context.Background(), lc, RunsAgents)
 			if !strings.Contains(strings.Join(problems, "\n"), tt.want) {
 				t.Errorf("problems = %q, want one about %q", problems, tt.want)
 			}
@@ -100,7 +100,28 @@ func TestPreflightAllowsAnUnverifiedLifecycleThatSaysSo(t *testing.T) {
 		t.Fatalf("Lifecycle: %v", err)
 	}
 
-	if problems := a.Preflight(context.Background(), lc); len(problems) != 0 {
+	if problems := a.Preflight(context.Background(), lc, RunsAgents); len(problems) != 0 {
 		t.Errorf("problems = %q, want none", problems)
+	}
+}
+
+// A command that only moves commits around asks less of the machine: folding a branch's fixups needs
+// git and the forge, and neither a provider's CLI nor a lifecycle that builds anything.
+func TestPreflightAsksLessOfACommandThatRunsNoAgent(t *testing.T) {
+	dir := repo(t)
+	writeTemplate(t, dir)
+	// No claude on PATH, and a lifecycle with nothing that builds or tests.
+	yaml := "sources:\n  github:\n    repo: acme/widgets\n"
+	a := newApp(t, cfg(t, yaml), dir, without(dir, "claude"))
+	lc, err := a.Lifecycle("")
+	if err != nil {
+		t.Fatalf("Lifecycle: %v", err)
+	}
+
+	if problems := a.Preflight(context.Background(), lc, MovesCommits); len(problems) != 0 {
+		t.Errorf("problems = %q, want none", problems)
+	}
+	if problems := a.Preflight(context.Background(), lc, RunsAgents); len(problems) == 0 {
+		t.Error("problems = none, want a run to be stopped by both of those")
 	}
 }

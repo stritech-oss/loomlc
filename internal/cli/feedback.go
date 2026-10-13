@@ -72,7 +72,7 @@ func runFeedback(ctx context.Context, args []string, env Env) int {
 		return fail(env.Stderr, "loomlc feedback: --max-iter must be at least 1, or left out to use the lifecycle's own limit\n")
 	}
 
-	a, lc, code := build(ctx, env, "feedback", *configPath, *name)
+	a, lc, code := build(ctx, env, "feedback", *configPath, *name, app.RunsAgents)
 	if code != ExitOK {
 		return code
 	}
