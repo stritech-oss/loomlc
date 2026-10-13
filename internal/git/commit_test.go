@@ -57,6 +57,23 @@ func (r *repo) write(name, content string) {
 	}
 }
 
+// mainOf returns the commit dir's repository has on main, for asking a bare origin what a push left it
+// with. The fixtures push one branch and it is always this one.
+func (r *repo) mainOf(dir string) string {
+	r.t.Helper()
+	return r.inside(dir, "rev-parse", "refs/heads/main")
+}
+
+// inside runs git somewhere other than the fixture's own checkout.
+func (r *repo) inside(dir string, args ...string) string {
+	r.t.Helper()
+	out, err := r.git.Run(context.Background(), dir, args...)
+	if err != nil {
+		r.t.Fatalf("git -C %s %s: %v", dir, strings.Join(args, " "), err)
+	}
+	return out
+}
+
 // base is the first commit, which every test uses as the point its work starts after.
 func (r *repo) base() string { return r.run("rev-list", "--max-parents=0", "HEAD") }
 
@@ -365,5 +382,121 @@ func TestPathsSinceAndDiffReportWhatTheBranchAdds(t *testing.T) {
 		if !strings.Contains(patch, want) {
 			t.Errorf("diff doesn't contain %q:\n%s", want, patch)
 		}
+	}
+}
+
+// Folding a reviewer's fixups rewrites commits the remote already has, so the push that follows is the
+// one place loomlc forces. The lease is what keeps it honest: it replaces the commit it was given and
+// refuses once the remote has moved past it.
+func TestForcePushWithLeaseRewritesOnlyWhatItLeased(t *testing.T) {
+	r := newRepo(t)
+	ctx := context.Background()
+	bare := filepath.Join(r.t.TempDir(), "origin.git")
+	r.run("init", "--quiet", "--bare", "--initial-branch=main", bare)
+	r.run("remote", "add", "origin", bare)
+	r.write("a.txt", "a\n")
+	r.run("add", "a.txt")
+	r.run("commit", "--quiet", "--message", "feat: add a")
+	r.run("push", "--quiet", "origin", "main")
+	leased := r.run("rev-parse", "HEAD")
+
+	// The rewrite a fold does, against a remote that is still where it was.
+	r.run("commit", "--amend", "--quiet", "--message", "feat: add a, said better")
+	if err := r.git.ForcePushWithLease(ctx, r.dir, "origin", "main", leased); err != nil {
+		t.Fatalf("ForcePushWithLease: %v", err)
+	}
+	folded := r.run("rev-parse", "HEAD")
+	if got := r.mainOf(bare); got != folded {
+		t.Errorf("the remote is at %s, want the rewritten %s", got, folded)
+	}
+
+	// Somebody pushes while the next fold is being prepared, and the lease is now stale.
+	other := filepath.Join(r.t.TempDir(), "other")
+	r.run("clone", "--quiet", bare, other)
+	if err := os.WriteFile(filepath.Join(other, "b.txt"), []byte("b\n"), 0o600); err != nil {
+		t.Fatalf("write b.txt: %v", err)
+	}
+	r.inside(other, "add", "b.txt")
+	r.inside(other, "commit", "--quiet", "--message", "feat: add b")
+	r.inside(other, "push", "--quiet", "origin", "main")
+	theirs := r.mainOf(bare)
+
+	r.run("commit", "--amend", "--quiet", "--message", "feat: add a, said better still")
+	if err := r.git.ForcePushWithLease(ctx, r.dir, "origin", "main", folded); err == nil {
+		t.Error("the push replaced a commit nobody had read yet")
+	}
+	if got := r.mainOf(bare); got != theirs {
+		t.Errorf("the remote is at %s, want their %s: their commit was clobbered", got, theirs)
+	}
+}
+
+// Without a commit to lease, the push would be an ordinary force: the caller has lost track of what the
+// remote had, which is exactly when forcing destroys somebody's work.
+func TestForcePushWithLeaseNeedsACommitToLease(t *testing.T) {
+	r := newRepo(t)
+	bare := filepath.Join(r.t.TempDir(), "origin.git")
+	r.run("init", "--quiet", "--bare", "--initial-branch=main", bare)
+	r.run("remote", "add", "origin", bare)
+	r.run("push", "--quiet", "origin", "main")
+	remote := r.mainOf(bare)
+	r.run("commit", "--amend", "--quiet", "--message", "chore: start again")
+
+	err := r.git.ForcePushWithLease(context.Background(), r.dir, "origin", "main", "")
+	if err == nil {
+		t.Fatal("ForcePushWithLease pushed without a lease")
+	}
+	// The message has to be the one this refusal writes, not git's: with a remote reachable and a
+	// branch to replace, a push that got this far would have gone through.
+	if !strings.Contains(err.Error(), "no commit to hold the lease on") {
+		t.Errorf("error = %q, want it to say there was no lease", err)
+	}
+	if got := r.mainOf(bare); got != remote {
+		t.Errorf("the remote is at %s, want the untouched %s", got, remote)
+	}
+}
+
+// The whole promise of folding is that the branch still adds up to what was reviewed, which is checked
+// by comparing the tree. A merge commit is how that check earns its keep: rebase replays only the
+// non-merge commits, so a change that exists nowhere but in the merge disappears, and the fold comes out
+// with a different tree while git itself exits 0.
+func TestAutosquashRefusesAFoldThatChangesTheTree(t *testing.T) {
+	r := newRepo(t)
+	base := r.base()
+	r.write("a.txt", "a\n")
+	r.run("add", "a.txt")
+	r.run("commit", "--quiet", "--message", "feat: add a")
+	first := r.run("rev-parse", "HEAD")
+
+	// A second line of work off the same base, merged back in.
+	r.run("checkout", "--quiet", "-b", "side", base)
+	r.write("s.txt", "s\n")
+	r.run("add", "s.txt")
+	r.run("commit", "--quiet", "--message", "feat: add s")
+	r.run("checkout", "--quiet", "main")
+	r.run("merge", "--quiet", "--no-ff", "--no-edit", "side")
+	// The merge carries a change of its own, which neither side has: the resolution somebody made by
+	// hand, and the thing a rebase quietly drops.
+	r.write("merged.txt", "resolved by hand\n")
+	r.run("add", "merged.txt")
+	r.run("commit", "--quiet", "--amend", "--no-edit")
+	merged := r.run("rev-parse", "HEAD^{tree}")
+
+	// A fix to the first commit, as a feedback run would leave it.
+	r.write("a.txt", "a, once\n")
+	if _, err := r.git.CommitFixup(context.Background(), r.dir, first, "a was wrong", []string{"a.txt"}); err != nil {
+		t.Fatalf("CommitFixup: %v", err)
+	}
+
+	err := r.git.Autosquash(context.Background(), r.dir, base)
+	if err == nil {
+		t.Fatalf("Autosquash folded a branch whose tree it couldn't preserve; the tree is now %s, was %s",
+			r.run("rev-parse", "HEAD^{tree}"), merged)
+	}
+	if !strings.Contains(err.Error(), "the tree changed") {
+		t.Errorf("error = %q, want it to say the tree changed", err)
+	}
+	// Nothing was pushed by this, and nothing can be: the branch is a fold a person has to look at.
+	if _, err := r.git.Run(context.Background(), r.dir, "rev-parse", "--verify", "REBASE_HEAD"); err == nil {
+		t.Error("a rebase is still in progress")
 	}
 }
