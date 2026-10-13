@@ -267,18 +267,21 @@ loomlc run <task>           # run one task through its lifecycle (foreground)
 loomlc run --all            # drain all ready tasks (concurrency + backpressure), then exit
 loomlc watch                # poll the source and drain continuously
 loomlc feedback <output>    # act on review feedback for an open output (PR/MR) — the feedback loop
+loomlc tidy <output>        # fold the fixup commits a feedback run left, before merging
 loomlc resume <task|run>    # resume a blocked/failed/interrupted run, preserving work
 loomlc lifecycles|providers|executors   # introspection
 loomlc doctor               # verify provider CLIs, executor, and credentials are wired up
 ```
 
 Phase 0 builds this surface one command at a time: `lifecycles`, `providers`, `run <task>` and
-`feedback <output>` exist, where the task and the output are ids within the lifecycle's source and sink.
+`feedback <output>` and `tidy <output>` exist, where the task and the output are ids within the
+lifecycle's source and sink.
 The rest arrives with the pull requests in §8.
 
 A `feedback` run pushes a fix to an already-reviewed commit as a `fixup!` commit and never force-pushes,
-so the Commit policy check stays red until `loomlc tidy` folds them. Until tidy lands, that folding is
-`git rebase -i --autosquash` by hand.
+so the Commit policy check stays red until `loomlc tidy <output>` folds them. That is a human's command:
+it rewrites a branch people have read, refuses the fold unless the tree comes out byte-identical, and is
+the only place loomlc force-pushes.
 
 Unattended: a `watch` daemon (systemd user unit / cron), same as strive-ui's setup — but now the work
 happens inside the configured executor's sandbox.

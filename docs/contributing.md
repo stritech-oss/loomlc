@@ -40,8 +40,8 @@ an issue number:
 - Put issue-closing keywords (`Fixes #12`) in the pull request description, not in commits.
 - Squash `fixup!` and `squash!` commits before merging. The hook allows them locally; CI rejects them.
   A `loomlc feedback` run pushes them on purpose, so a reviewer can see what it changed about a commit
-  they already read. The **Commit policy** check stays red until someone folds them in with
-  `git rebase -i --autosquash <base>` and pushes the result.
+  they already read. The **Commit policy** check stays red until someone folds them in — see
+  [Pre-merge cleanup](#pre-merge-cleanup).
 
 ### Sign-off
 
@@ -104,6 +104,37 @@ scripts/commit-policy.test.sh                     # the checker's own tests
 There is a third mode, `range-wip`, which loomlc uses before a feedback push: the same rules, except
 that a `fixup!` header is allowed, since those commits are the point of that push. `range` is the one
 that gates a merge, so a branch stays red until the fixups are folded.
+
+### Pre-merge cleanup
+
+Folding those fixups is the step a human does before merging:
+
+```bash
+loomlc tidy 44        # fold the fixups on pull request 44
+```
+
+It rewrites commits people have already read, which is why nothing in a run reaches it: loomlc never
+force-pushes by itself. `tidy` refuses a closed pull request and one from a fork, and exits non-zero
+when it does, so `loomlc tidy 44 && gh pr merge 44` can't wave one through. A branch with no fixups
+on it is left exactly as it is, and that exits zero: folding before every merge is meant to be safe
+to repeat.
+
+Otherwise it checks the branch out in a workspace of its own, folds with
+`git rebase -i --autosquash` onto the **merge base**, and then refuses the result unless the tree is
+byte-identical to what was reviewed. It runs the `range` check over the folded commits, pushes with
+`--force-with-lease` on the commit the remote was on when it started, and comments the before and
+after histories on the pull request. A fold that conflicts is left for you and said on the pull
+request, and the comment names the commit to rebase onto — rebasing onto the tip of `main` instead
+would move the branch forward as well as folding it, which changes the tree.
+
+Two things to know before you run it. Checking the branch out resets your local branch of that name
+to the remote's; commits that were only on yours are saved under `refs/loomlc/attempts/` and the
+command prints where. And if you sign your commits, the rebase re-signs every commit it moves, so a
+key it can't use — no agent, a passphrase nobody can type — makes it refuse the fold rather than
+push an unsigned one.
+
+Afterwards anyone holding a copy of the branch has to reset to it rather than pull it, and review
+comments stay on the pull request, though GitHub may mark some as outdated.
 
 ## Pull requests
 
