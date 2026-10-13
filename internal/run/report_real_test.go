@@ -218,3 +218,37 @@ func TestAttributionBehindAnAutosquashPrefixIsDropped(t *testing.T) {
 type policyText struct{ t *testing.T }
 
 func (p policyText) CheckText(_ context.Context, body string) error { return checkText(p.t, body) }
+
+// The comment tidy posts lists a branch's commits twice over, and those subjects come from the branch
+// rather than from loomlc. Both lists go through the real checker, with a trailer behind git's own
+// autosquash prefix — where the anchored rules can't see it.
+func TestAttributionNeverReachesTheFoldComment(t *testing.T) {
+	before, dropped := sanitizeCommits([]git.Commit{
+		{SHA: "1111111111111111", Subject: "feat(cli): print the build commit"},
+		{SHA: "2222222222222222", Subject: "fixup! Co-authored-by: Claude <noreply@anthropic.com>"},
+	})
+	if len(dropped) == 0 {
+		t.Fatal("the trailer behind the fixup prefix survived the sanitizer")
+	}
+	after, _ := sanitizeCommits([]git.Commit{
+		{SHA: "3333333333333333", Subject: "feat(cli): print the build commit"},
+	})
+	body := Tidied(Tidy{
+		Output: sink.Ref{Sink: "github-pr", ID: "44"},
+		Base:   "main",
+		Before: before,
+		After:  after,
+		Fixups: 1,
+		Pushed: true,
+	})
+
+	if strings.Contains(body, "Co-authored-by") {
+		t.Errorf("the comment carries the trailer:\n%s", body)
+	}
+	if !strings.Contains(body, "`111111111111` feat(cli): print the build commit") {
+		t.Errorf("the comment lost the branch's own commits:\n%s", body)
+	}
+	if err := checkText(t, body); err != nil {
+		t.Errorf("the policy refused the comment: %v\n--- comment ---\n%s", err, body)
+	}
+}

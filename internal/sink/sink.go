@@ -12,6 +12,9 @@ const (
 	Marker = "<!-- loomlc:"
 	// ReplyMarker marks loomlc's reply to review feedback, which is where "since the last reply" starts.
 	ReplyMarker = Marker + "feedback-reply"
+	// TidyMarker marks what loomlc says after folding a branch's fixup commits. It is deliberately not
+	// ReplyMarker: folding answers no review, and it must not move where "since the last reply" starts.
+	TidyMarker = Marker + "tidy"
 )
 
 // Ref identifies an output within its sink.
