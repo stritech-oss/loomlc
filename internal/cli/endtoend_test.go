@@ -515,7 +515,7 @@ func TestFeedbackPushesAFixupAndRepliesToTheReviewer(t *testing.T) {
 	if got.code != ExitOK || got.stderr != "" {
 		t.Fatalf("exit code = %d, stderr = %q\nstdout:\n%s", got.code, got.stderr, got.stdout)
 	}
-	for _, want := range []string{"Answered the review on https://github.com/acme/widgets/pull/45", "pushed 1 commit", "--autosquash main"} {
+	for _, want := range []string{"Answered the review on https://github.com/acme/widgets/pull/45", "pushed 1 commit", "loomlc tidy 45"} {
 		if !strings.Contains(got.stdout, want) {
 			t.Errorf("stdout doesn't say %q:\n%s", want, got.stdout)
 		}
@@ -561,7 +561,7 @@ func TestFeedbackPushesAFixupAndRepliesToTheReviewer(t *testing.T) {
 		"<!-- loomlc:feedback-reply",
 		"**The commit is recorded twice** — Recorded it once and kept the value.",
 		"fixup! feat(cli): print the build commit",
-		"`git rebase -i --autosquash main` on the branch",
+		"`loomlc tidy 45` before merging",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Errorf("the reply doesn't contain %q:\n%s", want, reply)

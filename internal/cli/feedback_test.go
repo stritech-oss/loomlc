@@ -117,7 +117,7 @@ func TestFeedbackHelpSaysWhatItDoes(t *testing.T) {
 	if code != ExitOK || stderr.String() != "" {
 		t.Fatalf("exit code = %d, stderr = %q", code, stderr.String())
 	}
-	for _, want := range []string{"loomlc feedback [flags] [output]", "fixup! commit", "--autosquash", "-max-iter"} {
+	for _, want := range []string{"loomlc feedback [flags] [output]", "fixup! commit", "loomlc tidy", "-max-iter"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Errorf("help doesn't mention %q:\n%s", want, stdout.String())
 		}
@@ -135,9 +135,9 @@ func TestDescribeRevisionMatchesTheExitCode(t *testing.T) {
 		absent   []string
 	}{
 		"pushed and answered": {
-			rev:      run.Revision{Output: ref(), URL: url, Base: "main", Outcome: lifecycle.Proposed, Replied: true, Claimed: true, Pushed: true, Commits: pushed, Fixups: 1},
+			rev:      run.Revision{Output: ref(), URL: url, Outcome: lifecycle.Proposed, Replied: true, Claimed: true, Pushed: true, Commits: pushed, Fixups: 1},
 			answered: true,
-			want:     []string{"Answered the review on " + url, "pushed 1 commit", "--autosquash main"},
+			want:     []string{"Answered the review on " + url, "pushed 1 commit", "loomlc tidy 44"},
 		},
 		"answered in words": {
 			rev:      run.Revision{Output: ref(), URL: url, Outcome: lifecycle.Proposed, Replied: true, Claimed: true},

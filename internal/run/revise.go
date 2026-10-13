@@ -78,8 +78,6 @@ type Revision struct {
 	URL    string
 	// Task is the task the change was built for.
 	Task task.Ref
-	// Base is the branch the pull request merges into, which is what a fold rebases onto.
-	Base string
 	// Idle says why there was nothing to revise.
 	Idle string
 	// Outcome is how the lifecycle ended, and Passes how many times the change step ran.
@@ -151,7 +149,7 @@ func (r *Reviser) Revise(ctx context.Context, want sink.Ref) (rev Revision, err 
 		return Revision{Output: ref, URL: out.URL, Idle: ref.String() + " " + reason}, nil
 	}
 
-	rev = Revision{Output: ref, URL: out.URL, Base: out.Base}
+	rev = Revision{Output: ref, URL: out.URL}
 	// From here on the pull request is one loomlc may revise, so the reviewer gets an answer and both
 	// labels come off however this ends. Leaving the labels on would have a watch pick the same pull
 	// request up again; clearing them without saying anything would make a reviewer's request vanish.
@@ -400,7 +398,6 @@ func (r *Reviser) reply(ctx context.Context, rev Revision) error {
 		r.say("the reply didn't pass the commit policy, so it says less: %v", err)
 		body = Reply(Revision{
 			Output:  rev.Output,
-			Base:    rev.Base,
 			Outcome: rev.Outcome,
 			Passes:  rev.Passes,
 			Fixups:  rev.Fixups,

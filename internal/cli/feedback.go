@@ -22,8 +22,8 @@ id in the lifecycle's sink, such as 44 for a GitHub pull request.
 
 A fix to a commit a reviewer has already read is pushed as a fixup! commit, so they can see what
 changed. Nothing is folded and nothing is force-pushed, which leaves the Commit policy check red
-until a person folds them with git rebase -i --autosquash. Both feedback labels are cleared however
-the revision ends, and the reply says what happened even when the revision broke.
+until a person folds them with loomlc tidy. Both feedback labels are cleared however the revision
+ends, and the reply says what happened even when the revision broke.
 
 Exit codes:
   0  the review was answered, or nothing was asking for changes
@@ -114,8 +114,7 @@ func describeRevision(rev run.Revision) string {
 		}
 		fmt.Fprintf(&b, "Answered the review on %s and pushed %s.\n", rev.URL, commits(len(rev.Commits)))
 		if rev.Fixups > 0 {
-			fmt.Fprintf(&b, "  %s still to fold: `git rebase -i --autosquash %s` on %s before merging.\n",
-				commits(rev.Fixups), rev.Base, rev.Output)
+			fmt.Fprintf(&b, "  %s still to fold: run `loomlc tidy %s` before merging.\n", commits(rev.Fixups), rev.Output.ID)
 		}
 	case !rev.Claimed && len(rev.Blockers) == 0 && len(rev.Refusals) == 0:
 		return "" // nothing was taken, and the error says why

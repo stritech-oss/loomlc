@@ -40,8 +40,8 @@ func Reply(rev Revision) string {
 	writeItems(&b, "Worth knowing", rev.Warnings)
 
 	if rev.Pushed && rev.Fixups > 0 {
-		fmt.Fprintf(&b, "\n%s Fold them before merging — `git rebase -i --autosquash %s` on the branch — because"+
-			" the Commit policy check stays red while a `fixup!` commit is on it.\n", leftStanding(rev.Fixups), rev.Base)
+		fmt.Fprintf(&b, "\n%s Run `loomlc tidy %s` before merging, because the Commit policy check stays red"+
+			" while a `fixup!` commit is on the branch.\n", leftStanding(rev.Fixups), rev.Output.ID)
 	}
 	if rev.Log != "" {
 		fmt.Fprintf(&b, "\nThe prompts and answers are in `%s`.\n", rev.Log)

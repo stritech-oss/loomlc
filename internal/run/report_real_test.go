@@ -196,7 +196,6 @@ func TestAttributionBehindAnAutosquashPrefixIsDropped(t *testing.T) {
 
 			body := Reply(Revision{
 				Output:  sink.Ref{Sink: "github-pr", ID: "44"},
-				Base:    "main",
 				Outcome: lifecycle.Proposed,
 				Passes:  1,
 				Commits: []git.Commit{{SHA: "2222222222222222", Subject: clean}},
