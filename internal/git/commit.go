@@ -232,3 +232,18 @@ func (c *Client) RemoteBranch(ctx context.Context, dir, remote, branch string) (
 	}
 	return out != "", nil
 }
+
+// ForcePushWithLease replaces a branch on the remote with the local one, and only while the remote is
+// still at expected.
+//
+// This is the one command that rewrites a branch somebody has already read, so it is a person's to run:
+// nothing in a run reaches it. The lease is the commit the rewrite started from rather than a
+// remote-tracking ref, so a push that landed while the rewrite was happening stops this one instead of
+// being overwritten.
+func (c *Client) ForcePushWithLease(ctx context.Context, dir, remote, branch, expected string) error {
+	if expected == "" {
+		return fmt.Errorf("force-push %s: no commit to hold the lease on", branch)
+	}
+	_, err := c.Run(ctx, dir, "push", "--force-with-lease="+branch+":"+expected, remote, branch)
+	return err
+}
