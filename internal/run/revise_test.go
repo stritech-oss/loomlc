@@ -212,7 +212,7 @@ func TestRevisePushesTheAnswerAndRepliesToTheReviewer(t *testing.T) {
 		"The branch has been updated.",
 		"**The flag is read twice** — Read it once and kept the value.",
 		"`222222222222` fixup! feat(cli): print the build commit",
-		"git rebase -i --autosquash main",
+		"`loomlc tidy 44` before merging",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Errorf("the reply doesn't contain %q:\n%s", want, reply)
@@ -640,7 +640,7 @@ func TestAReplyThePolicyRefusesSaysLess(t *testing.T) {
 	if strings.Contains(reply, "claude.ai/code") {
 		t.Errorf("the reply carries attribution:\n%s", reply)
 	}
-	if !strings.Contains(reply, "git rebase -i --autosquash main") {
+	if !strings.Contains(reply, "`loomlc tidy 44` before merging") {
 		t.Errorf("the shorter reply dropped what a person has to do next:\n%s", reply)
 	}
 }
