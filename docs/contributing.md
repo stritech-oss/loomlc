@@ -148,3 +148,21 @@ comments stay on the pull request, though GitHub may mark some as outdated.
   push to `main`.
 - Changes to agent rules, the commit policy, or CI need a code owner's review (see
   [`.github/CODEOWNERS`](../.github/CODEOWNERS)).
+
+## Releases
+
+A release is a tag. Pushing one named `v*` runs
+[`.github/workflows/release.yml`](../.github/workflows/release.yml): it vets and tests the tagged
+commit, cross-compiles the archives with `task dist`, and publishes them to a GitHub release
+alongside their checksums.
+
+```sh
+git switch main && git pull
+git tag -s v0.1.0 -m v0.1.0
+git push origin v0.1.0
+```
+
+Tag a commit that is already on `main` with its checks green, and sign the tag. The binaries report
+the tag they were built from, so `loomlc version` names a release rather than a commit. `task dist`
+builds the same archives locally, which is how to see what a release will contain before pushing the
+tag that publishes it.
