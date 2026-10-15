@@ -1,0 +1,47 @@
+# Pushing a v* tag publishes a release: `git tag -s v0.1.0 -m v0.1.0 && git push origin v0.1.0`.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Build and publish binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # creates the release and uploads its archives
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the version comes from git describe, which needs the tags
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25.x"
+
+      - uses: go-task/setup-task@v2
+        with:
+          version: 3.53.1
+
+      # A tag can point at any commit, so the binaries are tested here rather than trusted because
+      # the Go workflow once passed. Lint is left to that workflow: it judges the source, not the
+      # artifact.
+      - name: go vet
+        run: task vet
+
+      - name: go test
+        run: task test
+
+      - name: Cross-compile
+        run: task dist
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/checksums.txt \
+            --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
