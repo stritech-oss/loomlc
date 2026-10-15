@@ -79,7 +79,7 @@ func runVersion(args []string, env Env) int {
 	if len(args) > 0 {
 		return fail(env.Stderr, fmt.Sprintf("loomlc version: unexpected arguments %q\n", args))
 	}
-	return print(env.Stdout, fmt.Sprintf("loomlc %s\n", version.Version))
+	return print(env.Stdout, fmt.Sprintf("loomlc %s\n", version.String()))
 }
 
 // print writes msg to w and reports success. A failed write to stdout can't be reported anywhere
