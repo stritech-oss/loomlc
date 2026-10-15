@@ -1,9 +1,20 @@
-# Pushing a v* tag publishes a release: `git tag -s v0.1.0 -m v0.1.0 && git push origin v0.1.0`.
+# A release is a version, cut either way: run this workflow and name the bump, or push a signed v*
+# tag yourself. See docs/contributing.md#releases.
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which part to raise, unless an exact version is given
+        type: choice
+        options: [patch, minor, major, prerelease]
+        default: patch
+      version:
+        description: An exact version instead, such as v0.1.0
+        type: string
 
 permissions:
   contents: read
@@ -13,11 +24,11 @@ jobs:
     name: Build and publish binaries
     runs-on: ubuntu-latest
     permissions:
-      contents: write # creates the release and uploads its archives
+      contents: write # creates the tag and the release, and uploads the archives
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0 # the version comes from git describe, which needs the tags
+          fetch-depth: 0 # the version is read from the tags, which a shallow clone doesn't have
 
       - uses: actions/setup-go@v7
         with:
@@ -27,14 +38,48 @@ jobs:
         with:
           version: 3.53.1
 
-      # A tag can point at any commit, so the binaries are tested here rather than trusted because
-      # the Go workflow once passed. Lint is left to that workflow: it judges the source, not the
-      # artifact.
+      # However it was started, a release comes from what main already carries: a tag on an
+      # unreviewed branch would publish code nobody merged.
+      - name: Check the commit is on main
+        run: |
+          git fetch --quiet origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main ||
+            { echo "::error::$GITHUB_SHA is not on origin/main, so it is not releasable"; exit 1; }
+
+      - name: Work out the version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+          EXACT: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            tag=$GITHUB_REF_NAME # the tag that started this is the version
+          else
+            tag=$(scripts/next-version.sh "${EXACT:-$BUMP}")
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Releasing \`$tag\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # Before any tag is written, so a commit that fails doesn't leave one behind. A tag can point
+      # at any commit, which is why these run here at all rather than being trusted from the Go
+      # workflow's run on another one. Lint stays there: it judges the source, not the artifact.
       - name: go vet
         run: task vet
 
       - name: go test
         run: task test
+
+      # A tag pushed with this token deliberately doesn't start another workflow run, so this job
+      # goes on to build and publish it rather than waiting for the push trigger.
+      - name: Tag it
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"
 
       - name: Cross-compile
         run: task dist
@@ -42,6 +87,11 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/checksums.txt \
-            --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+          # A version with a prerelease identifier is published as one, so it isn't offered as the
+          # latest release.
+          marks=()
+          case "$TAG" in *-*) marks+=(--prerelease) ;; esac
+          gh release create "$TAG" dist/*.tar.gz dist/checksums.txt \
+            --title "$TAG" --generate-notes --verify-tag "${marks[@]}"
