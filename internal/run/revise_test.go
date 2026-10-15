@@ -1,6 +1,7 @@
 package run
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
@@ -642,6 +643,37 @@ func TestAReplyThePolicyRefusesSaysLess(t *testing.T) {
 	}
 	if !strings.Contains(reply, "`loomlc tidy 44` before merging") {
 		t.Errorf("the shorter reply dropped what a person has to do next:\n%s", reply)
+	}
+}
+
+// The checker's output can carry a contributor's name and address and a trailer the line-anchored
+// guards can't see mid-line, so the reviewer's reply says what failed and the terminal has the detail.
+func TestTheReplyDoesNotQuoteTheCheckersOutput(t *testing.T) {
+	const out = "commit-policy: 1ee86bd: agent attribution is not allowed (line 3): Co-authored-by: Someone <s@example.com>"
+	r, p := reviser(t)
+	var terminal bytes.Buffer
+	r.Progress = &terminal
+	r.Publisher = New(p.vcs, p.checks, &policy{err: errors.New(out)}, nil)
+
+	rev, err := r.Revise(context.Background(), sink.Ref{})
+	if err != nil {
+		t.Fatalf("Revise: %v", err)
+	}
+
+	if rev.Pushed || len(p.reviews.comments) != 1 {
+		t.Fatalf("pushed = %v, comments = %d; want a refusal answered once", rev.Pushed, len(p.reviews.comments))
+	}
+	reply := p.reviews.comments[0]
+	for _, leak := range []string{"Co-authored-by", "s@example.com", "Someone"} {
+		if strings.Contains(reply, leak) {
+			t.Errorf("the reply carries %q:\n%s", leak, reply)
+		}
+	}
+	if !strings.Contains(reply, "don't pass the commit policy") {
+		t.Errorf("the reply doesn't say what failed:\n%s", reply)
+	}
+	if !strings.Contains(terminal.String(), out) {
+		t.Errorf("the operator's terminal lost the checker's output:\n%s", terminal.String())
 	}
 }
 
