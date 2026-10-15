@@ -1,5 +1,5 @@
-# A release is a version, cut either way: run this workflow and name the bump, or push a signed v*
-# tag yourself. See docs/contributing.md#releases.
+# A release is a version, cut either way: run this workflow and name the bump (and a commit on main,
+# if not its head), or push a signed v* tag yourself. See docs/contributing.md#releases.
 name: Release
 
 on:
@@ -15,6 +15,9 @@ on:
       version:
         description: An exact version instead, such as v0.1.0
         type: string
+      commit:
+        description: A commit on main to release instead of the dispatched ref's head
+        type: string
 
 permissions:
   contents: read
@@ -28,6 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.commit }} # empty checks out the dispatched ref; a sha that resolves to nothing fails here
           fetch-depth: 0 # the version is read from the tags, which a shallow clone doesn't have
 
       - uses: actions/setup-go@v7
@@ -43,22 +47,33 @@ jobs:
       - name: Check the commit is on main
         run: |
           git fetch --quiet origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main ||
-            { echo "::error::$GITHUB_SHA is not on origin/main, so it is not releasable"; exit 1; }
+          sha=$(git rev-parse HEAD)
+          git merge-base --is-ancestor "$sha" origin/main ||
+            { echo "::error::$sha is not on origin/main, so it is not releasable"; exit 1; }
 
       - name: Work out the version
         id: version
         env:
           BUMP: ${{ inputs.bump }}
           EXACT: ${{ inputs.version }}
+          COMMIT: ${{ inputs.commit }}
         run: |
           if [ "$GITHUB_EVENT_NAME" = push ]; then
             tag=$GITHUB_REF_NAME # the tag that started this is the version
           else
+            # A bump counts from the highest tag, so on a commit that doesn't descend from it the
+            # result would be numerically newer than its content. An exact version is the way out.
+            if [ -n "$COMMIT" ] && [ -z "$EXACT" ]; then
+              latest=$(git -c versionsort.suffix=- tag --list 'v*' --sort=-v:refname | head -1)
+              if [ -n "$latest" ] && ! git merge-base --is-ancestor "$latest" HEAD; then
+                echo "::error::$(git rev-parse HEAD) does not descend from the latest release $latest, so a bump would name a newer version for older content; pass an exact version to release it anyway"
+                exit 1
+              fi
+            fi
             tag=$(scripts/next-version.sh "${EXACT:-$BUMP}")
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "Releasing \`$tag\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Releasing \`$tag\` from \`$(git rev-parse HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
 
       # Before any tag is written, so a commit that fails doesn't leave one behind. A tag can point
       # at any commit, which is why these run here at all rather than being trusted from the Go
