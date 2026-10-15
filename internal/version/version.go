@@ -13,8 +13,9 @@ var Version = "dev"
 // that path builds without ldflags.
 func String() string { return choose(Version, moduleVersion()) }
 
-// choose picks between the two, preferring the linker's. Go writes "(devel)" for a build from a
-// checkout rather than a published version, which says no more than "dev" does.
+// choose picks between the two, preferring the linker's. A plain `go build` in a checkout reports a
+// pseudo-version Go derives from the commit, which is worth printing; it reports "(devel)" when it has
+// no version control to read, and that says no more than "dev" does.
 func choose(linked, module string) string {
 	if linked != "" && linked != "dev" {
 		return linked
