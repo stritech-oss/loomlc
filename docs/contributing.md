@@ -151,10 +151,33 @@ comments stay on the pull request, though GitHub may mark some as outdated.
 
 ## Releases
 
-A release is a tag. Pushing one named `v*` runs
-[`.github/workflows/release.yml`](../.github/workflows/release.yml): it vets and tests the tagged
-commit, cross-compiles the archives with `task dist`, and publishes them to a GitHub release
-alongside their checksums.
+A release is a version tag, and the tag is what publishes it:
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) vets and tests the commit,
+cross-compiles the archives with `task dist`, and publishes them to a GitHub release with their
+checksums. Either way, the commit has to be on `main` already — the workflow refuses a commit that
+isn't, so nothing unreviewed is published.
+
+**Name the bump.** Run the Release workflow and choose `patch`, `minor`, `major` or `prerelease`, or
+type an exact version to override the choice:
+
+```sh
+gh workflow run Release -f bump=minor      # v0.1.0 -> v0.2.0
+gh workflow run Release -f version=v0.1.0  # the first release, or any exact version
+```
+
+The workflow works out the version with [`scripts/next-version.sh`](../scripts/next-version.sh),
+tags the commit and publishes it. The bumps follow npm's, so bumping the part a prerelease already
+anticipates releases it rather than moving past it: `patch` on `v1.2.3-rc1` is `v1.2.3`, and
+`prerelease` counts up from `-0`. A version with a prerelease identifier is published as a
+prerelease, so it isn't offered as the latest. Run the script yourself to see a version before
+cutting it:
+
+```sh
+scripts/next-version.sh minor        # what the next minor would be
+scripts/next-version.sh prerelease   # v1.2.3 -> v1.2.4-0
+```
+
+**Or tag it yourself**, which is the way to sign the tag, since the workflow's own tag is unsigned:
 
 ```sh
 git switch main && git pull
@@ -162,7 +185,6 @@ git tag -s v0.1.0 -m v0.1.0
 git push origin v0.1.0
 ```
 
-Tag a commit that is already on `main` with its checks green, and sign the tag. The binaries report
-the tag they were built from, so `loomlc version` names a release rather than a commit. `task dist`
-builds the same archives locally, which is how to see what a release will contain before pushing the
-tag that publishes it.
+The binaries report the tag they were built from, so `loomlc version` names a release rather than a
+commit. `task dist` builds the same archives locally, which is how to see what a release will
+contain before cutting it.
