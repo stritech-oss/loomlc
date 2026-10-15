@@ -66,6 +66,10 @@ type Decision struct {
 	Commits []git.Commit
 	// Gates are the results of the publish gates.
 	Gates []gate.Result
+	// Diagnostics are what git, the commit policy checker and the gates printed about a refusal. They are
+	// for the operator's terminal only: they can carry names, addresses and trailers, so nothing posts or
+	// records them.
+	Diagnostics []string
 }
 
 // OK reports whether the work can be published.
@@ -103,7 +107,8 @@ func (p *Publisher) Prepare(ctx context.Context, opts Options) (Decision, error)
 	// nothing: rewriting a commit the reviewer has read is a person's decision, not a run's.
 	if !opts.Revising {
 		if err := p.vcs.Autosquash(ctx, opts.Dir, opts.Base); err != nil {
-			d.Refusals = append(d.Refusals, fmt.Sprintf("the fixes this run made couldn't be folded in: %v", err))
+			d.Refusals = append(d.Refusals, "the fixes this run made couldn't be folded in; git's own account of it is in the operator's terminal")
+			d.Diagnostics = append(d.Diagnostics, fmt.Sprintf("folding the fixes: %v", err))
 			return d, nil
 		}
 	}
@@ -140,7 +145,8 @@ func (p *Publisher) Prepare(ctx context.Context, opts Options) (Decision, error)
 		checkRange = p.policy.CheckRangeWithFixups
 	}
 	if err := checkRange(ctx, opts.Dir, opts.Base, "HEAD"); err != nil {
-		d.Refusals = append(d.Refusals, fmt.Sprintf("the commits don't pass the commit policy: %v", err))
+		d.Refusals = append(d.Refusals, "the commits don't pass the commit policy; what it said is in the operator's terminal")
+		d.Diagnostics = append(d.Diagnostics, fmt.Sprintf("commit policy: %v", err))
 	}
 
 	gates, err := p.checks.Run(ctx, opts.Dir, opts.Gates)
@@ -149,7 +155,8 @@ func (p *Publisher) Prepare(ctx context.Context, opts Options) (Decision, error)
 	}
 	d.Gates = gates
 	for _, failed := range gate.Failed(gates) {
-		d.Refusals = append(d.Refusals, fmt.Sprintf("the publish gate `%s` failed:\n%s", failed.Name, strings.TrimSpace(failed.Output)))
+		d.Refusals = append(d.Refusals, fmt.Sprintf("the publish gate `%s` failed; its output is in the operator's terminal", failed.Name))
+		d.Diagnostics = append(d.Diagnostics, fmt.Sprintf("publish gate `%s`:\n%s", failed.Name, strings.TrimSpace(failed.Output)))
 	}
 	return d, nil
 }
