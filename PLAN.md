@@ -308,8 +308,9 @@ happens inside the configured executor's sandbox.
   `bun build --compile`, closer to provider SDKs but heavier; loomlc shells out rather than embeds SDKs,
   which favours Go.)
 - **Module path:** `github.com/stritech-oss/loomlc`.
-- **Ship:** GoReleaser → GitHub Releases + Homebrew tap + `curl | sh`; a runtime container image on
-  GHCR for the `docker` executor; a Workshop SDK/env spec for the `workshop` executor.
+- **Ship:** GitHub Releases, cross-compiled by the Go toolchain CI already has, then a Homebrew tap
+  and `curl | sh`; a runtime container image on GHCR for the `docker` executor; a Workshop SDK/env
+  spec for the `workshop` executor.
 - **Complementary:** a Claude Code **plugin** (for teams staying on `claude`) and a published
   **GitHub Action** wrapper (turnkey CI usage with a GitHub App token) can reuse the same engine.
 - **License:** **Apache-2.0** (decided, §10).
@@ -317,7 +318,8 @@ happens inside the configured executor's sandbox.
 ## 8. Roadmap
 
 - **Phase 0 — Port.** Recreate the strive-ui flow as loomlc's `sdlc` preset: `claude` provider +
-  `github` source/sink + `worktree` executor. Prove parity with `agent-runner.sh`.
+  `github` source/sink + `worktree` executor. Prove parity with `agent-runner.sh`. Ship tagged
+  binaries, so trying it needs no Go toolchain.
 - **Phase 1 — Engine.** Config schema; lifecycle runner (order, loops, gates); state store + `resume`;
   scheduler (concurrency + backpressure + `watch`).
 - **Phase 2 — Provider contract.** Formalize the provider interface + capability matrix; solidify the
@@ -330,8 +332,8 @@ happens inside the configured executor's sandbox.
   the `file` backlog source to prove source-agnosticism.
 - **Phase 5 — Isolation.** `docker` executor (non-root, ro-rootfs, egress allowlist) + GitHub App
   scoped tokens. Then evaluate/add the **`workshop`** executor.
-- **Phase 6 — Beyond SDLC + distribution.** Ship `research`/`triage`/`docs` presets; GoReleaser +
-  Homebrew + Action wrapper + plugin.
+- **Phase 6 — Beyond SDLC + distribution.** Ship `research`/`triage`/`docs` presets; Homebrew
+  + Action wrapper + plugin.
 
 ## 9. Non-goals
 
