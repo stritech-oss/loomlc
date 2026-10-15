@@ -67,3 +67,30 @@ tasks:
         sh: git describe --tags --always --dirty 2>/dev/null || echo dev
     cmds:
       - go build -trimpath -ldflags "-X github.com/stritech-oss/loomlc/internal/version.Version={{.VERSION}}" -o bin/loomlc ./cmd/loomlc
+
+  dist:
+    desc: Cross-compile the release archives and checksums into dist/
+    vars:
+      VERSION:
+        sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+      # Unix only. Elsewhere, cancelling a step can't stop the processes it started
+      # (internal/proc/proc_other.go), so loomlc isn't shipped for those platforms.
+      TARGETS: linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+    cmds:
+      - rm -rf dist
+      - |
+        set -eu
+        mkdir -p dist
+        for target in {{.TARGETS}}; do
+          os="${target%/*}"
+          arch="${target#*/}"
+          name="loomlc_{{.VERSION}}_${os}_${arch}"
+          mkdir -p "dist/${name}"
+          CGO_ENABLED=0 GOOS="${os}" GOARCH="${arch}" go build -trimpath \
+            -ldflags "-X github.com/stritech-oss/loomlc/internal/version.Version={{.VERSION}}" \
+            -o "dist/${name}/loomlc" ./cmd/loomlc
+          cp LICENSE README.md "dist/${name}/"
+          tar -C dist -czf "dist/${name}.tar.gz" "${name}"
+          rm -rf "dist/${name}"
+        done
+        cd dist && sha256sum ./*.tar.gz > checksums.txt
