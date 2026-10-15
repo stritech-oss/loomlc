@@ -313,6 +313,9 @@ func (r *Reviser) attempt(ctx context.Context, out sink.Output, t task.Task, ite
 		return err
 	}
 	record.Refusals, rev.Refusals, rev.Warnings = decision.Refusals, decision.Refusals, decision.Warnings
+	for _, detail := range decision.Diagnostics {
+		r.say("%s", detail)
+	}
 	record.Gates = append(record.Gates, gateRecords(decision.Gates)...)
 	if !decision.OK() {
 		return r.answer(ctx, rev)

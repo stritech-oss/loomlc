@@ -111,6 +111,8 @@ func TestPrepareRefuses(t *testing.T) {
 		scanner Scanner
 		edit    func(*Options)
 		want    string
+		// leaked is what a tool printed: the refusal must not repeat it and Diagnostics must hold it.
+		leaked string
 	}{
 		{
 			name: "nothing built or tested the work",
@@ -121,7 +123,8 @@ func TestPrepareRefuses(t *testing.T) {
 		{
 			name: "the fixups wouldn't fold",
 			vcs:  &vcs{foldErr: errors.New("the tree changed from abc to def")}, checks: &checks{},
-			want: "couldn't be folded in",
+			want:   "couldn't be folded in",
+			leaked: "the tree changed from abc to def",
 		},
 		{
 			name: "nothing to publish",
@@ -148,12 +151,14 @@ func TestPrepareRefuses(t *testing.T) {
 			vcs:  work(), checks: &checks{},
 			policy: &policy{err: errors.New(`header is not a Conventional Commit: "Add stuff"`)},
 			want:   "don't pass the commit policy",
+			leaked: `header is not a Conventional Commit: "Add stuff"`,
 		},
 		{
 			name:   "a publish gate failed",
 			vcs:    work(),
 			checks: &checks{results: []gate.Result{{Name: "task check", Passed: false, Output: "lint: 3 issues"}}},
 			want:   "the publish gate `task check` failed",
+			leaked: "lint: 3 issues",
 		},
 	}
 	for _, tt := range tests {
@@ -176,7 +181,37 @@ func TestPrepareRefuses(t *testing.T) {
 			if !strings.Contains(strings.Join(d.Refusals, "\n"), tt.want) {
 				t.Errorf("refusals = %q, want one containing %q", d.Refusals, tt.want)
 			}
+			if tt.leaked == "" {
+				return
+			}
+			if strings.Contains(strings.Join(d.Refusals, "\n"), tt.leaked) {
+				t.Errorf("refusals = %q, repeat what the tool printed", d.Refusals)
+			}
+			if !strings.Contains(strings.Join(d.Diagnostics, "\n"), tt.leaked) {
+				t.Errorf("diagnostics = %q, want %q for the operator", d.Diagnostics, tt.leaked)
+			}
 		})
+	}
+}
+
+// The checker's output names the commits it refused, and on a pull request branch those can be anyone's.
+// A trailer mid-line is past the guards that anchor to a line's start, so it must never reach a refusal.
+func TestPrepareKeepsTheCheckersOutputOutOfRefusals(t *testing.T) {
+	out := "commit-policy: 1ee86bd: agent attribution is not allowed (line 3): Co-authored-by: Someone <s@example.com>"
+	pol := &policy{err: errors.New(out)}
+
+	d, err := New(work(), &checks{}, pol, nil).Prepare(context.Background(), options())
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	refused := strings.Join(d.Refusals, "\n")
+	for _, leak := range []string{"Co-authored-by", "s@example.com", "Someone"} {
+		if strings.Contains(refused, leak) {
+			t.Errorf("refusals = %q, carry %q", d.Refusals, leak)
+		}
+	}
+	if !strings.Contains(strings.Join(d.Diagnostics, "\n"), out) {
+		t.Errorf("diagnostics = %q, want the checker's output for the operator", d.Diagnostics)
 	}
 }
 

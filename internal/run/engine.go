@@ -245,6 +245,9 @@ func (e *Engine) attempt(ctx context.Context, t task.Task, log Log, record *runl
 		return err
 	}
 	record.Refusals, report.Refusals, report.Warnings = decision.Refusals, decision.Refusals, decision.Warnings
+	for _, detail := range decision.Diagnostics {
+		e.say("%s", detail)
+	}
 	record.Gates = append(record.Gates, gateRecords(decision.Gates)...)
 	if len(decision.Commits) > 0 {
 		record.Commits = commitRecords(decision.Commits) // the history as it will be pushed
