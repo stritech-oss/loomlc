@@ -1,6 +1,7 @@
 package run
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
@@ -534,6 +535,36 @@ func TestTheCommentDropsAttributionAnAgentWrote(t *testing.T) {
 	}
 	if !strings.Contains(comment, "the version package doesn't exist yet") {
 		t.Errorf("the comment lost what the agent actually said:\n%s", comment)
+	}
+}
+
+// The checker's output carries a contributor's name and address and the trailer itself, mid-line where
+// the guards anchored to a line's start can't see it. The comment says what failed in loomlc's words, and
+// the operator's terminal gets the detail.
+func TestTheCommentDoesNotQuoteTheCheckersOutput(t *testing.T) {
+	const out = "commit-policy: 1ee86bd: agent attribution is not allowed (line 3): Co-authored-by: Someone <s@example.com>"
+	e, p := engine(t)
+	var terminal bytes.Buffer
+	e.Progress = &terminal
+	e.Publisher = New(p.vcs, p.checks, &policy{err: errors.New(out)}, nil)
+
+	if _, err := e.Run(context.Background(), task.Ref{}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(p.source.comments) != 1 {
+		t.Fatalf("task comments = %q, want one", p.source.comments)
+	}
+	comment := p.source.comments[0]
+	for _, leak := range []string{"Co-authored-by", "s@example.com", "Someone"} {
+		if strings.Contains(comment, leak) {
+			t.Errorf("the comment carries %q:\n%s", leak, comment)
+		}
+	}
+	if !strings.Contains(comment, "don't pass the commit policy") {
+		t.Errorf("the comment doesn't say what failed:\n%s", comment)
+	}
+	if !strings.Contains(terminal.String(), out) {
+		t.Errorf("the operator's terminal lost the checker's output:\n%s", terminal.String())
 	}
 }
 
