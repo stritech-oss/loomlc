@@ -120,6 +120,7 @@ func (r *Runner) step(ctx context.Context, log Recorder, step Step, mode prompt.
 		AllowedCommands: step.Allowed,
 		OutputSchema:    schema,
 		Timeout:         step.Timeout,
+		Env:             r.env,
 	}, text)
 	if err != nil {
 		return err

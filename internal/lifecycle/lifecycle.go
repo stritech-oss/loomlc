@@ -129,6 +129,9 @@ type Options struct {
 	VCS VCS
 	// Checks runs the gate commands.
 	Checks Checks
+	// Env is the complete environment an agent's CLI runs with; it inherits nothing else, so a step
+	// with no PATH can't start any of the commands it is allowed to run.
+	Env []string
 	// Progress receives a line per step, for an operator watching. Nil is silent.
 	Progress io.Writer
 }
@@ -137,12 +140,13 @@ type Options struct {
 type Runner struct {
 	vcs      VCS
 	checks   Checks
+	env      []string
 	progress io.Writer
 }
 
 // New returns a Runner.
 func New(opts Options) *Runner {
-	return &Runner{vcs: opts.VCS, checks: opts.Checks, progress: opts.Progress}
+	return &Runner{vcs: opts.VCS, checks: opts.Checks, env: opts.Env, progress: opts.Progress}
 }
 
 // Implement takes a task from a plan to work that passed review, or says why it couldn't.
