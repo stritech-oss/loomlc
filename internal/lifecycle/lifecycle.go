@@ -123,18 +123,26 @@ type Result struct {
 	Blockers []string
 }
 
+// Options configure a Runner.
+type Options struct {
+	// VCS is the workspace the engine commits through.
+	VCS VCS
+	// Checks runs the gate commands.
+	Checks Checks
+	// Progress receives a line per step, for an operator watching. Nil is silent.
+	Progress io.Writer
+}
+
 // Runner runs lifecycles.
 type Runner struct {
-	vcs VCS
-	// checks runs gate commands.
-	checks Checks
-	// progress receives a line per step, for an operator watching. Nil is silent.
+	vcs      VCS
+	checks   Checks
 	progress io.Writer
 }
 
-// New returns a Runner. progress may be nil.
-func New(vcs VCS, checks Checks, progress io.Writer) *Runner {
-	return &Runner{vcs: vcs, checks: checks, progress: progress}
+// New returns a Runner.
+func New(opts Options) *Runner {
+	return &Runner{vcs: opts.VCS, checks: opts.Checks, progress: opts.Progress}
 }
 
 // Implement takes a task from a plan to work that passed review, or says why it couldn't.
