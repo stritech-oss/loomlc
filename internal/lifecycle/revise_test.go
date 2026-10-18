@@ -224,3 +224,16 @@ func TestReviseDoesNotNeedAPlanStep(t *testing.T) {
 		t.Fatalf("outcome = %s, want proposed", result.Outcome)
 	}
 }
+
+// A feedback run is the other way a step reaches a provider, so it needs the environment too.
+func TestARevisionRunsItsStepsWithTheEnvironmentItWasGiven(t *testing.T) {
+	s, _, engineer, reviewer := revising([]string{changeFixes}, []string{verdictPass})
+	v := &vcs{changed: []string{"a.go"}, head: "head", log: []git.Commit{reviewed}}
+
+	runner := New(Options{VCS: v, Checks: &checks{}, Env: operatorEnv})
+	if _, err := runner.Revise(context.Background(), s); err != nil {
+		t.Fatalf("Revise: %v", err)
+	}
+
+	checkEnv(t, map[string]*agent{"engineer": engineer, "qa": reviewer})
+}

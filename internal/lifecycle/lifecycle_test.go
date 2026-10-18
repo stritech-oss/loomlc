@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,10 +15,12 @@ import (
 	"github.com/stritech-oss/loomlc/internal/task"
 )
 
-// agent answers with the next scripted answer for its step, and records the prompts it was sent.
+// agent answers with the next scripted answer for its step, and records the prompts it was sent and the
+// environments it was run with, one of each per call.
 type agent struct {
 	answers []string
 	prompts []string
+	envs    [][]string
 	err     error
 	// onRun runs while the step does, for modelling what an agent does to the workspace.
 	onRun func()
@@ -25,6 +28,7 @@ type agent struct {
 
 func (a *agent) Run(_ context.Context, req provider.Request) (provider.Result, error) {
 	a.prompts = append(a.prompts, req.Prompt)
+	a.envs = append(a.envs, req.Env)
 	if a.onRun != nil {
 		a.onRun()
 	}
@@ -513,4 +517,37 @@ func TestARunStopsWhenItCannotBeRecorded(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "record plan") || !strings.Contains(err.Error(), "no space left") {
 		t.Fatalf("error = %v, want the run to stop because the plan step couldn't be recorded", err)
 	}
+}
+
+// operatorEnv is an environment a step can do its job with: a PATH to find git on, and a HOME to read
+// the operator's configuration from.
+var operatorEnv = []string{"PATH=/usr/bin:/bin", "HOME=/home/ada"}
+
+// checkEnv reports what each named step was run with.
+func checkEnv(t *testing.T, steps map[string]*agent) {
+	t.Helper()
+	for name, a := range steps {
+		if len(a.envs) == 0 {
+			t.Errorf("the %s step didn't run", name)
+			continue
+		}
+		for i, got := range a.envs {
+			if !slices.Equal(got, operatorEnv) {
+				t.Errorf("the %s step, call %d: env = %q, want %q", name, i, got, operatorEnv)
+			}
+		}
+	}
+}
+
+func TestEveryStepRunsWithTheEnvironmentItWasGiven(t *testing.T) {
+	s, engineer, reviewer := spec([]string{planReady}, []string{changeDone}, []string{verdictPass})
+	planner := s.Plan.Agent.(*agent)
+	v := &vcs{changed: []string{"a.go"}, head: "start"}
+
+	runner := New(Options{VCS: v, Checks: &checks{}, Env: operatorEnv})
+	if _, err := runner.Implement(context.Background(), s); err != nil {
+		t.Fatalf("Implement: %v", err)
+	}
+
+	checkEnv(t, map[string]*agent{"plan": planner, "engineer": engineer, "qa": reviewer})
 }
