@@ -44,7 +44,7 @@ func revise(t *testing.T, s Spec, v *vcs, c *checks) Result {
 		c = &checks{}
 	}
 	var progress strings.Builder
-	result, err := New(v, c, &progress).Revise(context.Background(), s)
+	result, err := New(Options{VCS: v, Checks: c, Progress: &progress}).Revise(context.Background(), s)
 	if err != nil {
 		t.Fatalf("Revise: %v\nprogress:\n%s", err, progress.String())
 	}
@@ -56,7 +56,7 @@ func revise(t *testing.T, s Spec, v *vcs, c *checks) Result {
 func reviseWithChanges(t *testing.T, s Spec, v *vcs, next []string) Result {
 	t.Helper()
 	var progress strings.Builder
-	result, err := New(&refillingVCS{vcs: v, next: next}, &checks{}, &progress).Revise(context.Background(), s)
+	result, err := New(Options{VCS: &refillingVCS{vcs: v, next: next}, Checks: &checks{}, Progress: &progress}).Revise(context.Background(), s)
 	if err != nil {
 		t.Fatalf("Revise: %v\nprogress:\n%s", err, progress.String())
 	}
@@ -200,7 +200,7 @@ func TestReviseRefusesASpecItCannotRun(t *testing.T) {
 			s, _, engineer, reviewer := revising([]string{changeFixes}, []string{verdictPass})
 			c.break_(&s)
 
-			_, err := New(v, &checks{}, nil).Revise(context.Background(), s)
+			_, err := New(Options{VCS: v, Checks: &checks{}}).Revise(context.Background(), s)
 			if err == nil {
 				t.Fatal("Revise accepted it")
 			}

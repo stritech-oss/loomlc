@@ -137,7 +137,7 @@ func run(t *testing.T, s Spec, v *vcs, c *checks) Result {
 		c = &checks{}
 	}
 	var progress strings.Builder
-	result, err := New(v, c, &progress).Implement(context.Background(), s)
+	result, err := New(Options{VCS: v, Checks: c, Progress: &progress}).Implement(context.Background(), s)
 	if err != nil {
 		t.Fatalf("Implement: %v\nprogress:\n%s", err, progress.String())
 	}
@@ -215,7 +215,7 @@ func runWithChanges(t *testing.T, s Spec, v *vcs, c *checks, next []string) Resu
 	t.Helper()
 	refill := &refillingVCS{vcs: v, next: next}
 	var progress strings.Builder
-	result, err := New(refill, c, &progress).Implement(context.Background(), s)
+	result, err := New(Options{VCS: refill, Checks: c, Progress: &progress}).Implement(context.Background(), s)
 	if err != nil {
 		t.Fatalf("Implement: %v\nprogress:\n%s", err, progress.String())
 	}
@@ -254,7 +254,7 @@ func TestTheCommitsAPassMadeAreFoundBySHA(t *testing.T) {
 	v := &vcs{changed: []string{"a.go"}, head: "start", log: []git.Commit{{SHA: "f00", Subject: "feat(cli): from the future"}}}
 
 	var progress strings.Builder
-	result, err := New(&skewed{vcs: v}, &checks{}, &progress).Implement(context.Background(), s)
+	result, err := New(Options{VCS: &skewed{vcs: v}, Checks: &checks{}, Progress: &progress}).Implement(context.Background(), s)
 	if err != nil {
 		t.Fatalf("Implement: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestCommitsAnAgentMadeItselfAreTakenBack(t *testing.T) {
 	engineer.onRun = func() { v.head = "the agent's own commit" }
 	var progress strings.Builder
 
-	result, err := New(v, &checks{}, &progress).Implement(context.Background(), s)
+	result, err := New(Options{VCS: v, Checks: &checks{}, Progress: &progress}).Implement(context.Background(), s)
 	if err != nil {
 		t.Fatalf("Implement: %v", err)
 	}
@@ -408,7 +408,7 @@ func TestImplementRefusesASpecItCannotRun(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := good
 			tt.edit(&s)
-			if _, err := New(&vcs{}, &checks{}, nil).Implement(context.Background(), s); err == nil || !strings.Contains(err.Error(), tt.want) {
+			if _, err := New(Options{VCS: &vcs{}, Checks: &checks{}}).Implement(context.Background(), s); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("Implement = %v, want an error about %q", err, tt.want)
 			}
 		})
@@ -495,7 +495,7 @@ func TestAFailedStepIsRecordedWithItsError(t *testing.T) {
 	var log recorder
 	s.Log = &log
 
-	_, err := New(&vcs{head: "origin/main"}, &checks{}, nil).Implement(context.Background(), s)
+	_, err := New(Options{VCS: &vcs{head: "origin/main"}, Checks: &checks{}}).Implement(context.Background(), s)
 	if err == nil {
 		t.Fatal("Implement: want the step's error")
 	}
@@ -509,7 +509,7 @@ func TestARunStopsWhenItCannotBeRecorded(t *testing.T) {
 	s, _, _ := spec([]string{planReady}, nil, nil)
 	s.Log = &recorder{err: fmt.Errorf("no space left on device")}
 
-	_, err := New(&vcs{head: "origin/main"}, &checks{}, nil).Implement(context.Background(), s)
+	_, err := New(Options{VCS: &vcs{head: "origin/main"}, Checks: &checks{}}).Implement(context.Background(), s)
 	if err == nil || !strings.Contains(err.Error(), "record plan") || !strings.Contains(err.Error(), "no space left") {
 		t.Fatalf("error = %v, want the run to stop because the plan step couldn't be recorded", err)
 	}
