@@ -99,6 +99,8 @@ type Revision struct {
 	// answered on it.
 	Claimed bool
 	Replied bool
+	// released says the labels are already cleared, so the record can hold the warning from clearing them.
+	released bool
 	// Log is the directory holding the run's record.
 	Log string
 }
@@ -252,6 +254,8 @@ func (r *Reviser) work(ctx context.Context, out sink.Output, t task.Task, items 
 		if err != nil {
 			record.Error = err.Error()
 		}
+		r.releaseLabels(ctx, rev)
+		record.Warnings = rev.Warnings
 		if saveErr := log.Save(record); saveErr != nil {
 			r.say("the run's record couldn't be written: %v", saveErr)
 		}
@@ -423,6 +427,10 @@ func (r *Reviser) reply(ctx context.Context, rev Revision) error {
 // A failure is a warning rather than a line in a log, because the label that is left behind is the one
 // that hides a pull request from every later pick: nothing would ever offer it again.
 func (r *Reviser) releaseLabels(ctx context.Context, rev *Revision) {
+	if rev.released {
+		return
+	}
+	rev.released = true
 	ctx, cancel := cleanup(ctx)
 	defer cancel()
 	if err := r.Reviews.ReleaseFeedback(ctx, rev.Output); err != nil {

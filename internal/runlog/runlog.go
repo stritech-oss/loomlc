@@ -39,9 +39,11 @@ type Run struct {
 	Commits []Commit `json:"commits,omitempty"`
 	Gates   []Gate   `json:"gates,omitempty"`
 	Output  *Output  `json:"output,omitempty"`
-	// Blockers say why a run proposed nothing; Refusals why publishing was refused.
+	// Blockers say why a run proposed nothing; Refusals why publishing was refused; Warnings what
+	// didn't work but didn't stop the run.
 	Blockers []string `json:"blockers,omitempty"`
 	Refusals []string `json:"refusals,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
 	// Error is set when the run failed rather than ended.
 	Error string `json:"error,omitempty"`
 }
