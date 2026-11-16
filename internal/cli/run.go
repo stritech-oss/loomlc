@@ -134,6 +134,9 @@ func build(ctx context.Context, env Env, cmd, configPath, name string, needs app
 	if problems := a.Preflight(ctx, lc, needs); len(problems) > 0 {
 		return nil, nil, failure(env.Stderr, fmt.Sprintf("loomlc %s: %s can't run yet:\n%s", cmd, lc.Name, bullets(problems)))
 	}
+	for _, advice := range a.Advise(ctx, lc) {
+		_, _ = io.WriteString(env.Stderr, "warning: "+advice+"\n") // best effort: the run goes on
+	}
 	return a, lc, ExitOK
 }
 

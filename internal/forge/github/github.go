@@ -584,6 +584,9 @@ func isReply(body string) bool {
 	return strings.HasPrefix(strings.TrimSpace(body), sink.ReplyMarker)
 }
 
+// Self returns the login gh is authenticated as, which is who opens the pull requests.
+func (f *Forge) Self(ctx context.Context) (string, error) { return f.self(ctx) }
+
 // self returns the login gh is authenticated as. It's asked for once, and only when something claims to
 // be one of loomlc's own replies.
 func (f *Forge) self(ctx context.Context) (string, error) {

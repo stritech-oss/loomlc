@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // Needs says how much of the machine a command uses, since not every command runs agents.
@@ -58,6 +59,24 @@ func (a *App) Preflight(ctx context.Context, lc *Lifecycle, needs Needs) []strin
 		add("the remote %q isn't configured in %s: %v", remote, a.repo, err)
 	}
 	return problems
+}
+
+// Advise reports what a run would drop without stopping it. Unlike Preflight it may use the network,
+// and it never blocks a run.
+//
+// Today that is a reviewer who is the operator: GitHub won't request a review from a pull request's
+// author, and loomlc opens the pull request as the account gh is signed in to. When gh can't say which
+// account that is, Advise stays silent rather than guess.
+func (a *App) Advise(ctx context.Context, lc *Lifecycle) []string {
+	reviewer := lc.Templates.Reviewer
+	if reviewer == "" {
+		return nil
+	}
+	self, err := lc.Forge.Self(ctx)
+	if err != nil || !strings.EqualFold(self, reviewer) {
+		return nil
+	}
+	return []string{fmt.Sprintf("sinks.%s.reviewer is %s, the account loomlc runs as, and GitHub won't request a review from the pull request's author; name someone else or the request is dropped", lc.Config.Sink, reviewer)}
 }
 
 // commands lists the executables the command needs: git, the forge's CLI, and, for a command that runs
