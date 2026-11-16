@@ -78,6 +78,7 @@ func TestFeedbackRejectsWhatCannotBeAnOutput(t *testing.T) {
 		want string
 	}{
 		{name: "two outputs", args: []string{"44", "45"}, want: "one output at a time"},
+		{name: "flags after the output", args: []string{"44", "--config", "x"}, want: "flags come before the task: loomlc feedback --config x 44"},
 		{name: "an id with a flag in it", args: []string{"--add-label"}, want: "flag provided but not defined"},
 		{name: "an id that isn't one", args: []string{"../../etc/passwd"}, want: "isn't an output id"},
 		{name: "no passes", args: []string{"--max-iter", "-1"}, want: "--max-iter must be at least 1"},

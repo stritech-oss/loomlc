@@ -140,6 +140,7 @@ func TestRunRejectsWhatCannotBeATask(t *testing.T) {
 		want string
 	}{
 		{name: "two tasks", args: []string{"9", "10"}, want: "one task at a time"},
+		{name: "flags after the task", args: []string{"36", "--config", ".loomlc/loomlc.yml"}, want: "flags come before the task: loomlc run --config .loomlc/loomlc.yml 36"},
 		{name: "an id with a flag in it", args: []string{"--add-label"}, want: "flag provided but not defined"},
 		{name: "an id that isn't one", args: []string{"../../etc/passwd"}, want: "isn't a task id"},
 		{name: "an id with a slash", args: []string{"9/1"}, want: "isn't a task id"},

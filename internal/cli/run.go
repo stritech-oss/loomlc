@@ -56,6 +56,9 @@ func runRun(ctx context.Context, args []string, env Env) int {
 		return ExitUsage
 	}
 	if flags.NArg() > 1 {
+		if msg, ok := flagsAfterTask("run", flags.Args()); ok {
+			return fail(env.Stderr, msg)
+		}
 		return fail(env.Stderr, fmt.Sprintf("loomlc run: one task at a time, and %q is more than one\n", flags.Args()))
 	}
 	if err := checkConfigFlag(flags); err != nil {
