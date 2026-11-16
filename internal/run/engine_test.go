@@ -426,7 +426,7 @@ func TestRunRefusesABranchTheRemoteAlreadyHas(t *testing.T) {
 // A review that couldn't be requested is the operator's to know about: GitHub refuses one on your own
 // pull request, so it can't fail the run, but it mustn't vanish either.
 func TestRunCarriesTheProposalsOwnWarnings(t *testing.T) {
-	e, _ := engine(t, func(p *parts, _ *Engine) {
+	e, p := engine(t, func(p *parts, _ *Engine) {
 		p.outputs.warnings = []string{"couldn't request a review from maintainer"}
 	})
 
@@ -436,6 +436,9 @@ func TestRunCarriesTheProposalsOwnWarnings(t *testing.T) {
 	}
 	if len(report.Warnings) != 1 || !strings.Contains(report.Warnings[0], "couldn't request a review") {
 		t.Errorf("report.Warnings = %q, want the proposal's own warning", report.Warnings)
+	}
+	if saved := p.log.last(t).Warnings; len(saved) != 1 || !strings.Contains(saved[0], "couldn't request a review") {
+		t.Errorf("record.Warnings = %q, want the warning kept in the run's record", saved)
 	}
 }
 
