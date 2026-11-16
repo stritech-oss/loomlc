@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -245,6 +246,7 @@ func (e *Engine) attempt(ctx context.Context, t task.Task, log Log, record *runl
 		return err
 	}
 	record.Refusals, report.Refusals, report.Warnings = decision.Refusals, decision.Refusals, decision.Warnings
+	record.Warnings = slices.Clone(decision.Warnings)
 	for _, detail := range decision.Diagnostics {
 		e.say("%s", detail)
 	}
@@ -267,6 +269,7 @@ func (e *Engine) attempt(ctx context.Context, t task.Task, log Log, record *runl
 		// didn't finish: releasing the claim would offer the same work again.
 		report.Output, report.Published, report.Settled = out, true, true
 		report.Warnings = append(report.Warnings, out.Warnings...)
+		record.Warnings = append(record.Warnings, out.Warnings...)
 		record.Output = &runlog.Output{Ref: out.Ref.String(), URL: out.URL}
 		e.say("proposed in %s", out.URL)
 	}

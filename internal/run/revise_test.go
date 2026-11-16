@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -497,7 +498,7 @@ func TestARefusedPushIsNotAnAnsweredReview(t *testing.T) {
 // A label that stays on hides the pull request from every later pick, so it can't be a line in a log
 // that nobody reads.
 func TestALabelThatWouldNotComeOffIsAWarning(t *testing.T) {
-	r, _ := reviser(t, func(p *pieces, _ *Reviser) {
+	r, p := reviser(t, func(p *pieces, _ *Reviser) {
 		p.reviews.errs["ReleaseFeedback"] = errors.New("gh is down")
 	})
 
@@ -511,6 +512,9 @@ func TestALabelThatWouldNotComeOffIsAWarning(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(rev.Warnings, "\n"), "before anything offers it again") {
 		t.Errorf("warnings = %q, want one saying the pull request won't be offered again", rev.Warnings)
+	}
+	if saved := p.log.last(t).Warnings; !slices.Equal(saved, rev.Warnings) {
+		t.Errorf("record.Warnings = %q, want %q", saved, rev.Warnings)
 	}
 }
 

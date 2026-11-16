@@ -252,6 +252,7 @@ func (r *Reviser) work(ctx context.Context, out sink.Output, t task.Task, items 
 		if err != nil {
 			record.Error = err.Error()
 		}
+		record.Warnings = rev.Warnings
 		if saveErr := log.Save(record); saveErr != nil {
 			r.say("the run's record couldn't be written: %v", saveErr)
 		}
