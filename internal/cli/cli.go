@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/stritech-oss/loomlc/internal/proc"
 	"github.com/stritech-oss/loomlc/internal/version"
@@ -89,6 +90,14 @@ func print(w io.Writer, msg string) int {
 		return ExitFailure
 	}
 	return ExitOK
+}
+
+// flagsAfterTask explains a task followed by flags: flag stops parsing at the first non-flag.
+func flagsAfterTask(cmd string, args []string) (string, bool) {
+	if len(args) < 2 || strings.HasPrefix(args[0], "-") || len(args[1]) < 2 || args[1][0] != '-' {
+		return "", false
+	}
+	return fmt.Sprintf("loomlc %s: flags come before the task: loomlc %s %s %s\n", cmd, cmd, strings.Join(args[1:], " "), args[0]), true
 }
 
 // fail reports a command that was invoked wrongly: the operator has to change what they typed.

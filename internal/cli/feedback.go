@@ -55,6 +55,9 @@ func runFeedback(ctx context.Context, args []string, env Env) int {
 		return ExitUsage
 	}
 	if flags.NArg() > 1 {
+		if msg, ok := flagsAfterTask("feedback", flags.Args()); ok {
+			return fail(env.Stderr, msg)
+		}
 		return fail(env.Stderr, fmt.Sprintf("loomlc feedback: one output at a time, and %q is more than one\n", flags.Args()))
 	}
 	if err := checkConfigFlag(flags); err != nil {

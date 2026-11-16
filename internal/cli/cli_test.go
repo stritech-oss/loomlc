@@ -221,3 +221,25 @@ func TestLifecyclesReportsUnreadableDefaultFile(t *testing.T) {
 		t.Errorf("exit code = %d, stderr = %q; want %d and a read error", code, stderr.String(), ExitFailure)
 	}
 }
+
+func TestFlagsAfterTask(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "a task then flags", args: []string{"36", "--config", "x"}, want: "loomlc run: flags come before the task: loomlc run --config x 36\n"},
+		{name: "a lone task", args: []string{"36"}},
+		{name: "two tasks", args: []string{"9", "10"}},
+		{name: "a lone dash", args: []string{"9", "-"}},
+		{name: "a flag first", args: []string{"--config", "x", "36"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := flagsAfterTask("run", tt.args)
+			if ok != (tt.want != "") || got != tt.want {
+				t.Errorf("flagsAfterTask = %q, %v, want %q", got, ok, tt.want)
+			}
+		})
+	}
+}

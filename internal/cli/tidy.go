@@ -59,6 +59,9 @@ func runTidy(ctx context.Context, args []string, env Env) int {
 	// Folding is never implied: it rewrites a branch, so it acts on the pull request it was told to and
 	// never on whichever one came up next.
 	if flags.NArg() != 1 {
+		if msg, ok := flagsAfterTask("tidy", flags.Args()); ok {
+			return fail(env.Stderr, msg)
+		}
 		return fail(env.Stderr, fmt.Sprintf("loomlc tidy: name one pull request to fold, and %q isn't one\n", flags.Args()))
 	}
 	if err := checkConfigFlag(flags); err != nil {
