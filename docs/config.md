@@ -92,9 +92,9 @@ local commits the remote doesn't, loomlc saves them under `refs/loomlc/attempts/
 earlier attempt's work is never lost. When a run ends, its workspace is removed, including uncommitted
 changes; the branch and its commits stay.
 
-What each run did is written to `.loomlc/runs/<run>/` in your checkout: `run.json`, and the prompt and
-answer of every step. Both directories are loomlc's own and aren't configurable beyond `root`, so add
-`.loomlc/` to your `.gitignore`.
+What each run did is written to `.loomlc/runs/<run>/` in your checkout: `run.json` (its warnings sit
+beside its blockers and refusals), and the prompt and answer of every step. Both directories are
+loomlc's own and aren't configurable beyond `root`, so add `.loomlc/` to your `.gitignore`.
 
 Run loomlc from the root of the checkout. Both directories, and the commit policy checker, are found
 relative to it, and a run started anywhere else refuses and says so.
@@ -123,7 +123,7 @@ The preset defines `github-pr`.
 | `type` | `github-pr` | Phase 0 has only `github-pr`. |
 | `base` | `main` | Branch that pull requests merge into. |
 | `label` | `agent-pr` | Label on pull requests loomlc opens. |
-| `reviewer` | none | GitHub username to request a review from. |
+| `reviewer` | none | GitHub username to request a review from. It has to be someone other than the account loomlc runs as: GitHub won't request a review from a pull request's author, so the request is dropped with a warning. loomlc says so before a run starts, and keeps the warning in `run.json`. |
 | `draft` | `false` | Open pull requests as drafts. |
 | `template` | `.github/pull_request_template.md` | Pull request template. |
 | `template_sections.description`, `.qa`, `.issue` | see the preset | Template headings loomlc fills in, matched case-insensitively. |

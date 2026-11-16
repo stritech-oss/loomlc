@@ -77,6 +77,10 @@ func runRun(ctx context.Context, args []string, env Env) int {
 	if code != ExitOK {
 		return code
 	}
+	// Only a run opens a pull request, so only a run has a reviewer to warn about.
+	for _, advice := range a.Advise(ctx, lc) {
+		_, _ = io.WriteString(env.Stderr, "warning: "+advice+"\n") // best effort: the run goes on
+	}
 	engine, err := a.Engine(lc, app.EngineOptions{MaxPasses: *maxIter, Progress: env.Stdout})
 	if err != nil {
 		return failure(env.Stderr, fmt.Sprintf("loomlc run: %v\n", err))
