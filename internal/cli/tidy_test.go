@@ -37,6 +37,7 @@ func TestTidyRejectsWhatCannotBeAnOutput(t *testing.T) {
 	}{
 		{name: "no output", args: nil, want: "name one pull request"},
 		{name: "two outputs", args: []string{"44", "45"}, want: "name one pull request"},
+		{name: "flags after the output", args: []string{"44", "--config", "x"}, want: "flags come before the task: loomlc tidy --config x 44"},
 		{name: "an id with a flag in it", args: []string{"--force"}, want: "flag provided but not defined"},
 		{name: "an id that isn't one", args: []string{"../../etc/passwd"}, want: "isn't an output id"},
 		{name: "a configuration nobody named", args: []string{"--config", "", "44"}, want: "--config needs a path"},
