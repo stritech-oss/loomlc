@@ -99,6 +99,9 @@ type Revision struct {
 	// answered on it.
 	Claimed bool
 	Replied bool
+	// stopped and released say the stop notice was tried and the labels are cleared, so the record can
+	// hold the warning from clearing them without either happening twice.
+	stopped, released bool
 	// Log is the directory holding the run's record.
 	Log string
 }
@@ -155,9 +158,7 @@ func (r *Reviser) Revise(ctx context.Context, want sink.Ref) (rev Revision, err 
 	// request up again; clearing them without saying anything would make a reviewer's request vanish.
 	// A reviewer asks again by adding the label back.
 	defer func() {
-		if !rev.Replied {
-			r.sayNothingWorked(ctx, &rev, err)
-		}
+		r.sayNothingWorked(ctx, &rev, err)
 		r.releaseLabels(ctx, &rev)
 	}()
 
@@ -193,9 +194,10 @@ func (r *Reviser) Revise(ctx context.Context, want sink.Ref) (rev Revision, err 
 // It says that the revision stopped and where the record is, and not what the error was: an error here
 // carries whatever git, gh or a provider printed, and this comment is public.
 func (r *Reviser) sayNothingWorked(ctx context.Context, rev *Revision, err error) {
-	if err == nil {
-		return // nothing broke; there was simply nothing to say
+	if err == nil || rev.Replied || rev.stopped {
+		return // nothing broke, or it was already said
 	}
+	rev.stopped = true
 	r.say("the review wasn't answered: %v", err)
 	stopped := *rev
 	stopped.Outcome, stopped.Pushed = 0, false
@@ -252,6 +254,8 @@ func (r *Reviser) work(ctx context.Context, out sink.Output, t task.Task, items 
 		if err != nil {
 			record.Error = err.Error()
 		}
+		r.sayNothingWorked(ctx, rev, err)
+		r.releaseLabels(ctx, rev)
 		record.Warnings = rev.Warnings
 		if saveErr := log.Save(record); saveErr != nil {
 			r.say("the run's record couldn't be written: %v", saveErr)
@@ -424,6 +428,10 @@ func (r *Reviser) reply(ctx context.Context, rev Revision) error {
 // A failure is a warning rather than a line in a log, because the label that is left behind is the one
 // that hides a pull request from every later pick: nothing would ever offer it again.
 func (r *Reviser) releaseLabels(ctx context.Context, rev *Revision) {
+	if rev.released {
+		return
+	}
+	rev.released = true
 	ctx, cancel := cleanup(ctx)
 	defer cancel()
 	if err := r.Reviews.ReleaseFeedback(ctx, rev.Output); err != nil {
